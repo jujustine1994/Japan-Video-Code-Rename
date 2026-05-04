@@ -19,10 +19,14 @@ D:\Adobe Reader\Adobe Acrobat XI Pro繁體中文\Adobe Acrobat XI Pro v11.0.9 fo
 | `naming_convention.md` | ✅ 完成 | 命名規範文件 |
 | `test_sources.py` | ✅ 完成 | 資料來源可行性測試 |
 | `requirements_test.txt` | ✅ 完成 | 測試腳本相依套件 |
-| `main.py` | ⏳ 未建 | 主程式（互動式 TUI） |
-| `launcher.ps1` | ⏳ 未建 | 環境檢查 + 啟動器 |
-| `AV Code Rename 啟動器.bat` | ⏳ 未建 | 雙擊入口 |
-| `requirements.txt` | ⏳ 未建 | 主程式相依套件 |
+| `config.py` | ✅ 完成 | config.json 讀寫，首次設定路徑 |
+| `scanner.py` | ✅ 完成 | 掃描資料夾、番號辨識、多集偵測 |
+| `fetcher.py` | ✅ 完成 | javdb Playwright 爬蟲、性別過濾、快取 |
+| `renamer.py` | ✅ 完成 | 命名規範、改名、log 寫入 |
+| `main.py` | ✅ 完成 | 主程式（4-Phase TUI） |
+| `launcher.ps1` | ✅ 完成 | 環境檢查 + 啟動器 |
+| `AV Code Rename 啟動器.bat` | ✅ 完成 | 雙擊入口 |
+| `requirements.txt` | ✅ 完成 | 主程式相依套件 |
 
 ## 計畫架構
 
