@@ -21,6 +21,10 @@
 
 ## 更新記錄
 
+### 2026-05-05（第三版）
+- 修復 processed_log bug：改名後的檔案下次掃描仍會重複出現
+- `load_processed_log()` 現在同時比對原始檔名（key）與改名後檔名（new_filename），命中任一即跳過
+
 ### 2026-05-05（第二版 — tkinter GUI）
 - 主程式從 rich TUI 改寫為 tkinter GUI
 - 新增命名格式排列功能（番號/女優名/片名可 ↑↓ 調序）
