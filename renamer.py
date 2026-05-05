@@ -18,11 +18,24 @@ def strip_actress_suffix(title: str, actresses: list) -> str:
     return result
 
 
-def build_filename(code: str, actresses: list, title: str, ext: str, part=None) -> str:
+def build_filename(code: str, actresses: list, title: str, ext: str,
+                   part=None, format_order=None) -> str:
+    if format_order is None:
+        format_order = ["code", "actress", "title"]
+
     actress_str = " ".join(actresses) if actresses else "未知女優"
     part_str = f"({part})" if part else ""
-    name = f"{code} {actress_str} - {title} {actress_str}{part_str}{ext}"
-    return sanitize(name)
+    components = {"code": code, "actress": actress_str, "title": title}
+
+    parts = []
+    for i, key in enumerate(format_order):
+        val = components[key]
+        if key == "title" and i > 0:
+            parts.append(f"- {val}")
+        else:
+            parts.append(val)
+
+    return sanitize(f"{' '.join(parts)}{part_str}{ext}")
 
 
 def rename_file(src: Path, new_name: str) -> bool:
