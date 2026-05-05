@@ -40,19 +40,21 @@ AV Code Rename 啟動器.bat
                     └── processed_log   已處理檔案紀錄（JSON）
 ```
 
-## 主程式流程
+## 主程式流程（4 Phase，使用者只需介入一次）
 
-1. 啟動 → 顯示 CTH Banner
-2. 掃描目標資料夾，過濾：已在 processed_log 的 + 已符合命名規範的
-3. 顯示待處理清單（共 N 筆）
-4. 逐一顯示：
-   - 目前檔名
-   - 識別到的番號
-   - 從 javdb 查到的片名 + 女優名
-   - 建議新檔名
-   - 操作選項：[Y]確認 / [E]手動編輯 / [S]跳過 / [Q]退出
-5. 確認後執行改名，寫入 processed_log
-6. 跳過的不寫入 log（下次仍會出現）
+**Phase 1 — 掃描**：讀 config.json 取得目標資料夾，過濾已在 processed_log 的檔案，回傳待處理清單。
+
+**Phase 2 — 批次查詢**（背景，有進度條）：每個檔案提取番號 → 查快取 → cache miss 才查 javdb → 過濾男性演員 → 組成建議檔名。查不到番號或 javdb 無資料 → 歸入「不確定」，維持原狀。
+
+**Phase 3 — 審閱**（唯一介入點）：
+- 顯示可更名清單（舊名 → 新名）
+- 顯示不確定清單（原因）
+- 同步輸出 `preview_YYYYMMDD_HHMMSS.txt`
+- 等待：[Enter] 執行全部 / Ctrl+C 取消
+
+**Phase 4 — 執行**：批次改名，成功寫入 processed_log.json，不確定的寫入 skipped.json（維持原狀）。
+
+**設計原則：使用者介入次數最少，不逐一確認每個檔案。**
 
 ## 資料來源
 
