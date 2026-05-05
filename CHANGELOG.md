@@ -21,6 +21,12 @@
 
 ## 更新記錄
 
+### 2026-05-06
+- 研究替代資料來源（javscraper、r18.dev API）
+- 實測結論：台灣 IP 下 DMM/r18.dev 鎖區（403）、javbus 改為地區封鎖，javscraper 三個來源均失敗
+- 新增 PITFALLS P7（javscraper DMM 鎖區）、P8（r18.dev 403）、P9（javbus 地區封鎖）
+- 更新 test_sources.py：加入 javscraper 與 r18.dev 輕量來源測試
+
 ### 2026-05-05（第四版）
 - 查詢 javdb 每筆間隔 1–2 秒隨機延遲，避免 rate limit
 - 查無資料的番號寫入 cache（`no_data: true`），7 天內重啟不重查

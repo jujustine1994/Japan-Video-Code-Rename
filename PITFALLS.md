@@ -60,3 +60,30 @@ import sys
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 ```
+
+---
+
+### P7：javscraper 的 DMM 來源台灣地區封鎖
+
+**問題**：`javscraper.DMM().get_video("SSIS-001")` 拋出 `list index out of range`。
+**原因**：`dmm.co.jp` 對台灣 IP 回傳地區封鎖頁面，XPath 解析不到預期的 HTML 元素，取 `[0]` 時炸掉。
+**解法**：不適用（除非走日本 IP proxy）。
+**禁止**：不要嘗試用 javscraper 搭配 DMM/MGStage/JAVLibrary 在台灣直連——三個來源全部失敗。
+
+---
+
+### P8：r18.dev JSON API 台灣地區封鎖
+
+**問題**：`GET https://r18.dev/videos/vod/movies/detail/-/dvd_id=SSIS-001/json/` 回傳 HTTP 403。
+**原因**：r18.dev 是 DMM 的海外平台，現已對台灣 IP 封鎖。
+**解法**：不適用（除非走非封鎖地區 IP）。
+**禁止**：不要再嘗試 r18.dev API。
+
+---
+
+### P9：javbus 改為地區偵測封鎖（2026-05）
+
+**問題**：javbus 搜尋結果頁顯示「所在地區年齡檢測」，無法取得影片資料。
+**原因**：javbus 從原本的 `driver-verify`（偵測 webdriver）改為地區封鎖，台灣 IP 直接被擋。
+**解法**：放棄 javbus。
+**禁止**：不要再嘗試任何方式存取 javbus（requests / cloudscraper / Playwright 均無效）。
