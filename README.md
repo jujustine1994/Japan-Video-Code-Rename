@@ -12,7 +12,7 @@
 
 # AV Code Rename
 
-自動掃描資料夾，將命名不符規範的 AV 影片檔案，透過查詢 javdb.com 取得正確片名與女優名後，以互動式介面逐一確認並重新命名。
+自動掃描資料夾，將命名不符規範的 AV 影片檔案，透過批次查詢 javdb.com 取得正確片名與女優名，產生更名清單後一次確認執行。
 
 ## 系統需求
 
@@ -23,13 +23,9 @@
 
 ## 執行方式
 
-雙擊 `AV Code Rename 啟動器.bat`（主工具尚未完成，見 TODO.md）
+雙擊 `AV Code Rename 啟動器.bat`
 
-### 目前可用：資料來源測試
-
-```
-python test_sources.py
-```
+首次執行會自動安裝環境並詢問目標資料夾路徑。之後全自動批次處理，最後一次確認即可。
 
 ## 命名規範
 
@@ -44,7 +40,4 @@ python test_sources.py
 
 ## 首次設定
 
-```bash
-pip install playwright playwright-stealth beautifulsoup4 requests
-python -m playwright install chromium
-```
+雙擊啟動器後自動完成（需要 `uv` 和 Python 3.10+，啟動器會自動偵測並安裝）。

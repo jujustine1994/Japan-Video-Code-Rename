@@ -1,20 +1,27 @@
 # TODO
 
-## 下一步（照順序）
+## 下一步
 
-- [ ] 完成 TUI 設計與規格確認（brainstorming）
-- [ ] 建立 implementation plan
-- [ ] 建立 `scanner.py`：掃描資料夾、辨識番號、過濾已處理檔案
-- [ ] 建立 `fetcher.py`：javdb Playwright 爬蟲、快取讀寫
-- [ ] 建立 `renamer.py`：套用命名規範、執行改名、寫入 log
-- [ ] 建立 `main.py`：主迴圈 TUI
-- [ ] 建立 `requirements.txt`
-- [ ] 建立 `launcher.ps1`（含首次安裝說明）
-- [ ] 建立 `AV Code Rename 啟動器.bat`
-- [ ] 端對端測試（小批量）
+- [ ] 端對端測試（建議先複製 5-10 個檔案到測試資料夾再跑）
+- [ ] 確認性別過濾正確（男優應被排除）
+- [ ] 確認多集邏輯正確（同番號多檔案出現 `(1)` `(2)` 後綴）
+- [ ] 若有 bug，回報錯誤訊息修復
 
-## 已知待決策
+## 已完成
 
-- javdb 演員清單包含男性（導演/男優），TUI 需讓使用者確認女優名單
-- javdb `.origin-title` 後面帶女優名，需在建檔名時去除
-- 番號辨識 regex 需處理各種格式（小寫、無連字號、特殊前綴）
+- [x] 完成 TUI 設計與規格確認
+- [x] 建立 implementation plan
+- [x] `scanner.py`：掃描資料夾、辨識番號、過濾已處理檔案
+- [x] `fetcher.py`：javdb Playwright 爬蟲、快取讀寫、性別過濾
+- [x] `renamer.py`：套用命名規範、執行改名、寫入 log
+- [x] `main.py`：4-Phase TUI 主程式
+- [x] `requirements.txt`
+- [x] `launcher.ps1`（含首次安裝說明）
+- [x] `AV Code Rename 啟動器.bat`
+
+## 已解決的設計決策
+
+- 男優過濾：自動偵測（訪問 javdb 演員頁面，h2 含「男優」→ 排除）
+- javdb `.origin-title` 後綴：自動從片名尾部去除女優名
+- 查無資料的檔案：歸入「不確定」，維持原狀，記錄至 skipped.json
+- 番號辨識：支援標準格式（DDT-435）+ 容錯（ddt435, ddt 435）
