@@ -18,19 +18,22 @@ from renamer import build_filename, rename_file, write_processed_log
 SCRIPT_DIR = Path(__file__).parent
 LABELS = {"code": "番號", "actress": "女優名", "title": "片名"}
 KEYS = {"番號": "code", "女優名": "actress", "片名": "title"}
+CHECK_ON  = "☑"
+CHECK_OFF = "☐"
 
 
 class AVRenameApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("AV Code Rename")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
 
         self.msg_queue: queue.Queue = queue.Queue()
-        self._pending: list = []        # (Path, str)
-        self._skipped: list = []        # (str, str)
+        self._pending: list = []        # (Path, str) — 所有查詢成功的項目
+        self._skipped: list = []        # (str, str)  — 查不到的項目
+        self._item_map: dict = {}       # tree iid → (Path, new_name)
         self._mode = tk.StringVar(value="folder")
-        self._selected_files: list = [] # list of Path (只在 files 模式使用)
+        self._selected_files: list = []
 
         self._cfg = config.load()
         self._format_order: list = self._cfg.get("format_order", ["code", "actress", "title"])
@@ -48,7 +51,6 @@ class AVRenameApp:
         frame_dir.grid(row=0, column=0, sticky="ew", **pad)
         frame_dir.columnconfigure(1, weight=1)
 
-        # 模式選擇
         ttk.Radiobutton(frame_dir, text="整個資料夾", variable=self._mode,
                         value="folder", command=self._on_mode_change).grid(
             row=0, column=0, sticky="w", padx=(0, 12))
@@ -56,7 +58,6 @@ class AVRenameApp:
                         value="files", command=self._on_mode_change).grid(
             row=0, column=1, sticky="w")
 
-        # 路徑欄位 + 瀏覽
         self.dir_var = tk.StringVar(value=self._cfg.get("target_dir", ""))
         self.entry_dir = ttk.Entry(frame_dir, textvariable=self.dir_var, width=52)
         self.entry_dir.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
@@ -84,27 +85,64 @@ class AVRenameApp:
                                     command=self._start, width=22)
         self.btn_start.pack(ipady=6)
 
-        # 進度
+        # 進度區（掃描/查詢期間用，小型 log）
         frame_prog = ttk.LabelFrame(self.root, text=" 處理進度 ", padding=8)
-        frame_prog.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 6))
+        frame_prog.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 4))
         self.lbl_progress = ttk.Label(frame_prog, text="等待開始...")
         self.lbl_progress.pack(anchor="w")
         self.progress_bar = ttk.Progressbar(frame_prog, mode="indeterminate", length=420)
-        self.progress_bar.pack(fill="x", pady=(4, 8))
+        self.progress_bar.pack(fill="x", pady=(4, 6))
         self.log_text = scrolledtext.ScrolledText(
-            frame_prog, width=62, height=16, state="disabled", font=("Consolas", 9)
+            frame_prog, width=62, height=6, state="disabled", font=("Consolas", 9)
         )
         self.log_text.pack(fill="x")
 
+        # 審閱清單（查詢完畢後顯示，初始隱藏）
+        self.frame_review = ttk.LabelFrame(self.root, text=" 審閱清單 — 點選列切換勾選 ", padding=8)
+        # row=4，但 grid() 在 _show_review() 裡呼叫
+
+        # Treeview
+        tree_frame = tk.Frame(self.frame_review)
+        tree_frame.pack(fill="both", expand=True)
+
+        self.tree = ttk.Treeview(
+            tree_frame,
+            columns=("check", "old", "new"),
+            show="headings",
+            selectmode="none",
+            height=12,
+        )
+        self.tree.heading("check", text="✔")
+        self.tree.heading("old",   text="原始檔名")
+        self.tree.heading("new",   text="新檔名")
+        self.tree.column("check", width=32,  stretch=False, anchor="center")
+        self.tree.column("old",   width=280, stretch=True)
+        self.tree.column("new",   width=280, stretch=True)
+        self.tree.bind("<Button-1>", self._toggle_check)
+
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=vsb.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+
+        # 全選/全不選
+        btn_row = tk.Frame(self.frame_review)
+        btn_row.pack(anchor="w", pady=(6, 0))
+        ttk.Button(btn_row, text="全選",   command=self._select_all,   width=8).pack(side="left", padx=(0, 4))
+        ttk.Button(btn_row, text="全不選", command=self._deselect_all, width=8).pack(side="left")
+        self.lbl_checked = ttk.Label(btn_row, text="")
+        self.lbl_checked.pack(side="left", padx=12)
+
         # 確認/取消（初始隱藏）
         self.frame_confirm = tk.Frame(self.root)
-        self.frame_confirm.grid(row=4, column=0, pady=(0, 12))
+        self.frame_confirm.grid(row=5, column=0, pady=(0, 12))
         self.btn_confirm = ttk.Button(self.frame_confirm, text="✔  確認改名",
                                       command=self._confirm, width=18)
         self.btn_cancel = ttk.Button(self.frame_confirm, text="✖  取消",
                                      command=self._cancel, width=12)
 
         self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(4, weight=1)
 
     # ── UI 互動 ──────────────────────────────────────────────
 
@@ -161,6 +199,47 @@ class AVRenameApp:
         cfg["format_order"] = self._format_order
         config.save(cfg)
 
+    # ── 審閱清單 ─────────────────────────────────────────────
+
+    def _toggle_check(self, event):
+        iid = self.tree.identify_row(event.y)
+        if not iid:
+            return
+        current = self.tree.set(iid, "check")
+        self.tree.set(iid, "check", CHECK_OFF if current == CHECK_ON else CHECK_ON)
+        self._update_checked_label()
+
+    def _select_all(self):
+        for iid in self.tree.get_children():
+            self.tree.set(iid, "check", CHECK_ON)
+        self._update_checked_label()
+
+    def _deselect_all(self):
+        for iid in self.tree.get_children():
+            self.tree.set(iid, "check", CHECK_OFF)
+        self._update_checked_label()
+
+    def _update_checked_label(self):
+        total   = len(self.tree.get_children())
+        checked = sum(1 for iid in self.tree.get_children()
+                      if self.tree.set(iid, "check") == CHECK_ON)
+        self.lbl_checked.config(text=f"已勾選 {checked} / {total} 筆")
+
+    def _show_review(self):
+        for iid in self.tree.get_children():
+            self.tree.delete(iid)
+        self._item_map = {}
+
+        for src, new_name in self._pending:
+            iid = self.tree.insert("", "end", values=(CHECK_ON, src.name, new_name))
+            self._item_map[iid] = (src, new_name)
+
+        self._update_checked_label()
+        self.frame_review.grid(row=4, column=0, sticky="nsew", padx=14, pady=(0, 4))
+
+    def _hide_review(self):
+        self.frame_review.grid_forget()
+
     # ── 執行流程 ──────────────────────────────────────────────
 
     def _start(self):
@@ -181,6 +260,7 @@ class AVRenameApp:
         self.log_text.config(state="normal")
         self.log_text.delete("1.0", "end")
         self.log_text.config(state="disabled")
+        self._hide_review()
         self.btn_confirm.pack_forget()
         self.btn_cancel.pack_forget()
         self.progress_bar.config(mode="indeterminate")
@@ -195,7 +275,7 @@ class AVRenameApp:
     def _worker(self):
         try:
             cfg = config.load()
-            log_file = str(SCRIPT_DIR / cfg["processed_log"])
+            log_file   = str(SCRIPT_DIR / cfg["processed_log"])
             cache_file = str(SCRIPT_DIR / cfg["cache_file"])
 
             if self._mode.get() == "folder":
@@ -222,19 +302,18 @@ class AVRenameApp:
                     self._put("progress", (i, len(files), f"查詢中 {i}/{len(files)}"))
                     if not code:
                         self._skipped.append((f.name, "無法辨識番號"))
-                        self._put("log", f"⚠ {f.name}\n  → 無法辨識番號\n")
+                        self._put("log", f"⚠ {f.name} → 無法辨識番號\n")
                         continue
                     result = fetcher.query(code)
                     if not result:
                         self._skipped.append((f.name, "javdb 查無資料"))
-                        self._put("log", f"⚠ {f.name}\n  → javdb 查無資料\n")
+                        self._put("log", f"⚠ {f.name} → javdb 查無資料\n")
                         continue
                     new_name = build_filename(
                         code, result["actresses"], result["title"],
                         f.suffix, format_order=self._format_order
                     )
                     self._pending.append((f, new_name))
-                    self._put("log", f"✓ {f.name}\n  → {new_name}\n")
             finally:
                 fetcher.stop()
             self._put("done_query", None)
@@ -243,23 +322,30 @@ class AVRenameApp:
             self._put("error", str(e))
 
     def _confirm(self):
+        to_rename = [(self._item_map[iid])
+                     for iid in self.tree.get_children()
+                     if self.tree.set(iid, "check") == CHECK_ON]
+        if not to_rename:
+            messagebox.showwarning("提示", "沒有勾選任何檔案")
+            return
         self.btn_confirm.config(state="disabled")
         self.btn_cancel.config(state="disabled")
-        threading.Thread(target=self._do_rename, daemon=True).start()
+        threading.Thread(target=self._do_rename, args=(to_rename,), daemon=True).start()
 
     def _cancel(self):
+        self._hide_review()
         self.btn_confirm.pack_forget()
         self.btn_cancel.pack_forget()
         self.btn_start.config(state="normal")
         self.lbl_progress.config(text="已取消")
         self._put("log", "已取消，未執行任何改名。\n")
 
-    def _do_rename(self):
+    def _do_rename(self, to_rename: list):
         cfg = config.load()
-        log_file = str(SCRIPT_DIR / cfg["processed_log"])
+        log_file     = str(SCRIPT_DIR / cfg["processed_log"])
         skipped_file = str(SCRIPT_DIR / cfg["skipped_log"])
         success = fail = 0
-        for src, new_name in self._pending:
+        for src, new_name in to_rename:
             if rename_file(src, new_name):
                 write_processed_log(log_file, src.name, new_name)
                 success += 1
@@ -301,16 +387,19 @@ class AVRenameApp:
                     self.progress_bar.config(mode="determinate", maximum=data, value=0)
                 elif msg_type == "done_query":
                     self.progress_bar.stop()
-                    n_ok, n_skip = len(self._pending), len(self._skipped)
-                    self.lbl_progress.config(text=f"查詢完成 — {n_ok} 筆可改名，{n_skip} 筆跳過")
-                    self._put("log", f"\n── 共 {n_ok} 筆可改名，{n_skip} 筆跳過 ──\n")
+                    n_ok   = len(self._pending)
+                    n_skip = len(self._skipped)
+                    self.lbl_progress.config(
+                        text=f"查詢完成 — {n_ok} 筆可改名，{n_skip} 筆查無資料")
                     if n_ok > 0:
+                        self._show_review()
                         self.btn_confirm.pack(side="left", padx=(0, 8), ipady=4)
                     self.btn_cancel.pack(side="left", ipady=4)
                 elif msg_type == "done_rename":
                     success, fail, skipped = data
                     self.lbl_progress.config(
                         text=f"完成 — 成功 {success} / 失敗 {fail} / 跳過 {skipped}")
+                    self._hide_review()
                     self.btn_confirm.pack_forget()
                     self.btn_cancel.pack_forget()
                     self.btn_start.config(state="normal")
