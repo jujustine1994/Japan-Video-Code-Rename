@@ -2,7 +2,7 @@
 
 ## 目前狀態
 
-**階段：完整實作完成，可執行**
+**階段：完整實作完成，tkinter GUI 版本**
 
 ### 已完成
 - [x] 命名規範文件（naming_convention.md）
@@ -21,7 +21,15 @@
 
 ## 更新記錄
 
-### 2026-05-05
+### 2026-05-05（第二版 — tkinter GUI）
+- 主程式從 rich TUI 改寫為 tkinter GUI
+- 新增命名格式排列功能（番號/女優名/片名可 ↑↓ 調序）
+- `build_filename()` 支援 `format_order` 參數
+- `format_order` 存入 config.json，下次啟動自動還原
+- 修復性別過濾 bug（改用 h2 selector 偵測男優）
+- 移除 rich 依賴
+
+### 2026-05-05（第一版）
 - 完整實作所有模組：config.py、scanner.py、renamer.py、fetcher.py、main.py
 - 建立 Windows 啟動器（launcher.ps1 + AV Code Rename 啟動器.bat）
 - 全部 16 個單元測試通過

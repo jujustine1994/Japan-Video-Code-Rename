@@ -2,7 +2,7 @@
 
 ## 工具概覽
 
-掃描指定資料夾內的影片檔案，辨識番號，透過 javdb.com 查詢片名與女優資訊，以互動式 TUI 逐一確認後重新命名。
+掃描指定資料夾內的影片檔案，辨識番號，透過 javdb.com 查詢片名與女優資訊，以 tkinter GUI 一次確認後批次重新命名。
 
 ## 目標資料夾
 
@@ -23,7 +23,7 @@ D:\Adobe Reader\Adobe Acrobat XI Pro繁體中文\Adobe Acrobat XI Pro v11.0.9 fo
 | `scanner.py` | ✅ 完成 | 掃描資料夾、番號辨識、多集偵測 |
 | `fetcher.py` | ✅ 完成 | javdb Playwright 爬蟲、性別過濾、快取 |
 | `renamer.py` | ✅ 完成 | 命名規範、改名、log 寫入 |
-| `main.py` | ✅ 完成 | 主程式（4-Phase TUI） |
+| `main.py` | ✅ 完成 | 主程式（tkinter GUI） |
 | `launcher.ps1` | ✅ 完成 | 環境檢查 + 啟動器 |
 | `AV Code Rename 啟動器.bat` | ✅ 完成 | 雙擊入口 |
 | `requirements.txt` | ✅ 完成 | 主程式相依套件 |
@@ -40,19 +40,25 @@ AV Code Rename 啟動器.bat
                     └── processed_log   已處理檔案紀錄（JSON）
 ```
 
-## 主程式流程（4 Phase，使用者只需介入一次）
+## 主程式（tkinter GUI）
 
-**Phase 1 — 掃描**：讀 config.json 取得目標資料夾，過濾已在 processed_log 的檔案，回傳待處理清單。
+啟動 → 讀 config.json 預填資料夾路徑 + 格式順序
 
-**Phase 2 — 批次查詢**（背景，有進度條）：每個檔案提取番號 → 查快取 → cache miss 才查 javdb → 過濾男性演員 → 組成建議檔名。查不到番號或 javdb 無資料 → 歸入「不確定」，維持原狀。
+使用者操作：
+1. 設定目標資料夾（或用瀏覽按鈕）
+2. 用 ↑↓ 調整命名格式元件順序（番號 / 女優名 / 片名）
+3. 按「開始掃描」
 
-**Phase 3 — 審閱**（唯一介入點）：
-- 顯示可更名清單（舊名 → 新名）
-- 顯示不確定清單（原因）
-- 同步輸出 `preview_YYYYMMDD_HHMMSS.txt`
-- 等待：[Enter] 執行全部 / Ctrl+C 取消
+背景執行緒（Phase 1+2）：
+- scanner.py 掃描 → 過濾 processed_log
+- fetcher.py 批次查詢 javdb，log 區即時顯示進度
+- 查不到者記入 skipped 清單
 
-**Phase 4 — 執行**：批次改名，成功寫入 processed_log.json，不確定的寫入 skipped.json（維持原狀）。
+查詢完畢 → log 區顯示完整結果清單 + 出現「確認改名」「取消」按鈕
+
+Phase 3（使用者確認後）：批次改名
+- 成功 → processed_log.json
+- 查不到 → skipped.json
 
 **設計原則：使用者介入次數最少，不逐一確認每個檔案。**
 
@@ -77,10 +83,16 @@ AV Code Rename 啟動器.bat
 - 格式：`{ "original_filename": { "new_filename": "...", "renamed_at": "..." } }`
 - 只記錄成功改名的檔案
 
-## 關鍵設定變數
+## Config 結構（config.json）
 
-```python
-TARGET_DIR = r"D:\Adobe Reader\Adobe Acrobat XI Pro繁體中文\Adobe Acrobat XI Pro v11.0.9 for Mac"
-CACHE_FILE = "cache/javdb_cache.json"
-LOG_FILE   = "processed_log.json"
+```json
+{
+  "target_dir": "D:\\...",
+  "cache_file": "cache/javdb_cache.json",
+  "processed_log": "processed_log.json",
+  "skipped_log": "skipped.json",
+  "format_order": ["code", "actress", "title"]
+}
 ```
+
+`format_order` 決定命名元件順序，片名前自動插入 ` - `（若非第一位）。
