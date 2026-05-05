@@ -8,6 +8,7 @@ DEFAULT_CONFIG = {
     "cache_file": "cache/javdb_cache.json",
     "processed_log": "processed_log.json",
     "skipped_log": "skipped.json",
+    "format_order": ["code", "actress", "title"],
 }
 
 
