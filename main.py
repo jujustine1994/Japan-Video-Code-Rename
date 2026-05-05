@@ -1,280 +1,289 @@
 import sys
-import os
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 
-from datetime import datetime
+import json
+import os
+import queue
+import threading
+import tkinter as tk
+from tkinter import ttk, messagebox, scrolledtext, filedialog
 from pathlib import Path
 
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
-
 import config
-import scanner
-import renamer
+from scanner import scan, extract_code
 from fetcher import Fetcher
+from renamer import build_filename, rename_file, write_processed_log
 
-console = Console()
-
-
-def show_cth_banner():
-    b = "\033[90m"
-    c = "\033[96m"
-    y = "\033[93m"
-    r = "\033[0m"
-    print(f"{b}/*  ================================  *\\{r}")
-    print(f"{b} *                                    *{r}")
-    print(f"{b} *    {c}██████╗████████╗██╗  ██╗{b}        *{r}")
-    print(f"{b} *   {c}██╔════╝   ██║   ██║  ██║{b}        *{r}")
-    print(f"{b} *   {c}██║        ██║   ███████║{b}        *{r}")
-    print(f"{b} *   {c}██║        ██║   ██╔══██║{b}        *{r}")
-    print(f"{b} *   {c}╚██████╗   ██║   ██║  ██║{b}        *{r}")
-    print(f"{b} *    {c}╚═════╝   ╚═╝   ╚═╝  ╚═╝{b}        *{r}")
-    print(f"{b} *                                    *{r}")
-    print(f"{b} *          {y}created by CTH{b}            *{r}")
-    print(f"{b}\\*  ================================  */{r}")
-    print()
+SCRIPT_DIR = Path(__file__).parent
+LABELS = {"code": "番號", "actress": "女優名", "title": "片名"}
+KEYS = {"番號": "code", "女優名": "actress", "片名": "title"}
 
 
-def ensure_target_dir(cfg: dict) -> dict:
-    while not cfg["target_dir"] or not Path(cfg["target_dir"]).is_dir():
-        if cfg["target_dir"]:
-            console.print(f"[red]路徑不存在：{cfg['target_dir']}[/red]")
-        console.print("[cyan]請輸入目標資料夾路徑：[/cyan]", end=" ")
-        path = input().strip().strip('"')
-        if Path(path).is_dir():
-            cfg["target_dir"] = path
-            config.save(cfg)
-            console.print(f"[green]已儲存路徑：{path}[/green]\n")
-        else:
-            console.print("[red]路徑不存在，請重新輸入。[/red]")
-    return cfg
+class AVRenameApp:
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.root.title("AV Code Rename")
+        self.root.resizable(False, False)
 
+        self.msg_queue: queue.Queue = queue.Queue()
+        self._pending: list = []   # (Path, str)
+        self._skipped: list = []   # (str, str)
 
-def phase1_scan(cfg: dict) -> list:
-    console.print("[bold cyan]Phase 1 — 掃描資料夾...[/bold cyan]")
-    files = scanner.scan(cfg["target_dir"], cfg["processed_log"])
-    console.print(f"  找到 [bold]{len(files)}[/bold] 個待處理檔案\n")
-    return files
+        self._cfg = config.load()
+        self._format_order: list = self._cfg.get("format_order", ["code", "actress", "title"])
 
+        self._build_ui()
+        self._poll_queue()
 
-def phase2_query(files: list, cfg: dict) -> tuple:
-    can_rename = []
-    uncertain = []
+    # ── UI 建立 ──────────────────────────────────────────────
 
-    videos = [f for f in files if f.suffix.lower() in {".mp4", ".webm"}]
-    srts   = [f for f in files if f.suffix.lower() == ".srt"]
+    def _build_ui(self):
+        pad = {"padx": 14, "pady": 6}
 
-    groups = scanner.group_by_code([f.name for f in videos])
-    multipart_codes = {code for code, names in groups.items() if len(names) > 1}
+        # 目標資料夾
+        frame_dir = ttk.LabelFrame(self.root, text=" 目標資料夾 ", padding=8)
+        frame_dir.grid(row=0, column=0, sticky="ew", **pad)
+        frame_dir.columnconfigure(0, weight=1)
+        self.dir_var = tk.StringVar(value=self._cfg.get("target_dir", ""))
+        ttk.Entry(frame_dir, textvariable=self.dir_var, width=52).grid(row=0, column=0, sticky="ew")
+        ttk.Button(frame_dir, text="瀏覽", command=self._browse).grid(row=0, column=1, padx=(6, 0))
 
-    fetcher = Fetcher(cfg["cache_file"])
-    fetcher.start()
+        # 命名格式
+        frame_fmt = ttk.LabelFrame(self.root, text=" 命名格式順序 ", padding=8)
+        frame_fmt.grid(row=1, column=0, sticky="ew", **pad)
+        self.fmt_list = tk.Listbox(frame_fmt, height=3, selectmode="single",
+                                   width=16, font=("", 10))
+        for key in self._format_order:
+            self.fmt_list.insert("end", LABELS[key])
+        self.fmt_list.grid(row=0, column=0, rowspan=2, sticky="ns")
+        self.fmt_list.selection_set(0)
+        ttk.Button(frame_fmt, text="↑", width=4, command=self._move_up).grid(
+            row=0, column=1, padx=8, pady=(4, 2))
+        ttk.Button(frame_fmt, text="↓", width=4, command=self._move_down).grid(
+            row=1, column=1, padx=8, pady=(2, 4))
 
-    try:
-        with Progress(
-            SpinnerColumn(),
-            BarColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            TimeRemainingColumn(),
-            console=console,
-        ) as progress:
-            task = progress.add_task("查詢 javdb 中...", total=len(videos))
+        # 開始按鈕
+        frame_btn = tk.Frame(self.root)
+        frame_btn.grid(row=2, column=0, pady=6)
+        self.btn_start = ttk.Button(frame_btn, text="▶  開始掃描",
+                                    command=self._start, width=22)
+        self.btn_start.pack(ipady=6)
 
-            for f in videos:
-                code = scanner.extract_code(f.name)
-                progress.update(task, description=f"查詢 {code or f.name[:30]}...")
+        # 進度
+        frame_prog = ttk.LabelFrame(self.root, text=" 處理進度 ", padding=8)
+        frame_prog.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 6))
+        self.lbl_progress = ttk.Label(frame_prog, text="等待開始...")
+        self.lbl_progress.pack(anchor="w")
+        self.progress_bar = ttk.Progressbar(frame_prog, mode="indeterminate", length=420)
+        self.progress_bar.pack(fill="x", pady=(4, 8))
+        self.log_text = scrolledtext.ScrolledText(
+            frame_prog, width=62, height=16, state="disabled", font=("Consolas", 9)
+        )
+        self.log_text.pack(fill="x")
 
-                if not code:
-                    uncertain.append({"file": f, "reason": "找不到番號"})
-                    progress.advance(task)
-                    continue
+        # 確認/取消（初始隱藏）
+        self.frame_confirm = tk.Frame(self.root)
+        self.frame_confirm.grid(row=4, column=0, pady=(0, 12))
+        self.btn_confirm = ttk.Button(self.frame_confirm, text="✔  確認改名",
+                                      command=self._confirm, width=18)
+        self.btn_cancel = ttk.Button(self.frame_confirm, text="✖  取消",
+                                     command=self._cancel, width=12)
 
-                data = fetcher.query(code)
-                if not data:
-                    uncertain.append({"file": f, "reason": "javdb 查無資料"})
-                    progress.advance(task)
-                    continue
+        self.root.columnconfigure(0, weight=1)
 
-                part = None
-                if code in multipart_codes:
-                    parts_list = sorted(groups[code])
-                    part = parts_list.index(f.name) + 1
+    # ── UI 互動 ──────────────────────────────────────────────
 
-                new_name = renamer.build_filename(
-                    code, data["actresses"], data["title"], f.suffix, part
-                )
-                can_rename.append({
-                    "file": f, "code": code,
-                    "new_name": new_name, "part": part,
-                    "data": data,
-                })
-                progress.advance(task)
+    def _browse(self):
+        d = filedialog.askdirectory()
+        if d:
+            self.dir_var.set(d)
 
-        _process_srts(srts, can_rename, uncertain, fetcher)
+    def _move_up(self):
+        sel = self.fmt_list.curselection()
+        if not sel or sel[0] == 0:
+            return
+        i = sel[0]
+        val = self.fmt_list.get(i)
+        self.fmt_list.delete(i)
+        self.fmt_list.insert(i - 1, val)
+        self.fmt_list.selection_set(i - 1)
+        self._save_fmt()
 
-    finally:
-        fetcher.stop()
+    def _move_down(self):
+        sel = self.fmt_list.curselection()
+        if not sel or sel[0] == self.fmt_list.size() - 1:
+            return
+        i = sel[0]
+        val = self.fmt_list.get(i)
+        self.fmt_list.delete(i)
+        self.fmt_list.insert(i + 1, val)
+        self.fmt_list.selection_set(i + 1)
+        self._save_fmt()
 
-    return can_rename, uncertain
+    def _save_fmt(self):
+        self._format_order = [KEYS[self.fmt_list.get(i)]
+                               for i in range(self.fmt_list.size())]
+        cfg = config.load()
+        cfg["format_order"] = self._format_order
+        config.save(cfg)
 
+    # ── 執行流程 ──────────────────────────────────────────────
 
-def _process_srts(srts, can_rename, uncertain, fetcher):
-    mp4_codes = {item["code"]: item["new_name"] for item in can_rename}
+    def _start(self):
+        target_dir = self.dir_var.get().strip()
+        if not os.path.isdir(target_dir):
+            messagebox.showerror("錯誤", "請選擇有效的目標資料夾")
+            return
+        cfg = config.load()
+        cfg["target_dir"] = target_dir
+        cfg["format_order"] = self._format_order
+        config.save(cfg)
 
-    for srt in srts:
-        code = scanner.extract_code(srt.name)
-        if not code:
-            uncertain.append({"file": srt, "reason": "找不到番號"})
-            continue
-        if code in mp4_codes:
-            base = Path(mp4_codes[code]).stem
-            can_rename.append({
-                "file": srt, "code": code,
-                "new_name": base + ".srt", "part": None, "data": {},
-            })
-        else:
-            data = fetcher.query(code)
-            if data:
-                new_name = renamer.build_filename(
-                    code, data["actresses"], data["title"], ".srt"
-                )
-                can_rename.append({
-                    "file": srt, "code": code,
-                    "new_name": new_name, "part": None, "data": data,
-                })
-            else:
-                uncertain.append({"file": srt, "reason": "javdb 查無資料"})
+        self.log_text.config(state="normal")
+        self.log_text.delete("1.0", "end")
+        self.log_text.config(state="disabled")
+        self.btn_confirm.pack_forget()
+        self.btn_cancel.pack_forget()
+        self.progress_bar.config(mode="indeterminate")
+        self.progress_bar.start(10)
+        self.lbl_progress.config(text="掃描中...")
+        self.btn_start.config(state="disabled")
+        self._pending = []
+        self._skipped = []
 
+        threading.Thread(target=self._worker, args=(target_dir,), daemon=True).start()
 
-def phase3_review(can_rename: list, uncertain: list) -> bool:
-    console.print()
-    console.rule("[bold]審閱清單[/bold]")
-    console.print(
-        f"  [green]可更名：{len(can_rename)} 筆[/green]  "
-        f"[yellow]不確定：{len(uncertain)} 筆[/yellow]  "
-        f"共 {len(can_rename) + len(uncertain)} 筆\n"
-    )
+    def _worker(self, target_dir: str):
+        try:
+            cfg = config.load()
+            log_file = str(SCRIPT_DIR / cfg["processed_log"])
+            cache_file = str(SCRIPT_DIR / cfg["cache_file"])
 
-    if can_rename:
-        console.print("[green]── 可更名 ──[/green]")
-        for i, item in enumerate(can_rename, 1):
-            console.print(f"  [dim]{i:03d}[/dim]  {item['file'].name}")
-            console.print(f"       [green]→ {item['new_name']}[/green]")
-        console.print()
+            files = scan(target_dir, log_file)
+            self._put("log", f"掃描完成，找到 {len(files)} 個待處理檔案\n")
 
-    if uncertain:
-        console.print("[yellow]── 不確定（維持原狀）──[/yellow]")
-        for i, item in enumerate(uncertain, 1):
-            idx = len(can_rename) + i
-            console.print(
-                f"  [dim]{idx:03d}[/dim]  {item['file'].name}  "
-                f"[dim]({item['reason']})[/dim]"
-            )
-        console.print()
+            if not files:
+                self._put("done_query", None)
+                return
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    preview_path = Path(f"preview_{ts}.txt")
-    _write_preview(preview_path, can_rename, uncertain)
-    console.print(f"[dim]審閱清單已儲存至 {preview_path}[/dim]\n")
+            self._put("switch_progress", len(files))
+            fetcher = Fetcher(cache_file)
+            fetcher.start()
+            try:
+                for i, f in enumerate(files, 1):
+                    code = extract_code(f.name)
+                    self._put("progress", (i, len(files), f"查詢中 {i}/{len(files)}"))
+                    if not code:
+                        self._skipped.append((f.name, "無法辨識番號"))
+                        self._put("log", f"⚠ {f.name}\n  → 無法辨識番號\n")
+                        continue
+                    result = fetcher.query(code)
+                    if not result:
+                        self._skipped.append((f.name, "javdb 查無資料"))
+                        self._put("log", f"⚠ {f.name}\n  → javdb 查無資料\n")
+                        continue
+                    new_name = build_filename(
+                        code, result["actresses"], result["title"],
+                        f.suffix, format_order=self._format_order
+                    )
+                    self._pending.append((f, new_name))
+                    self._put("log", f"✓ {f.name}\n  → {new_name}\n")
+            finally:
+                fetcher.stop()
+            self._put("done_query", None)
+        except Exception as e:
+            self._put("log", f"\n[ERROR] {e}\n")
+            self._put("error", str(e))
 
-    console.rule()
-    console.print(
-        f"按 [bold green]Enter[/bold green] 確認更名 {len(can_rename)} 個檔案  "
-        "[dim]|[/dim]  [bold red]Ctrl+C[/bold red] 取消"
-    )
-    try:
-        input()
-        return True
-    except KeyboardInterrupt:
-        console.print("\n[yellow]已取消。[/yellow]")
-        return False
+    def _confirm(self):
+        self.btn_confirm.config(state="disabled")
+        self.btn_cancel.config(state="disabled")
+        threading.Thread(target=self._do_rename, daemon=True).start()
 
+    def _cancel(self):
+        self.btn_confirm.pack_forget()
+        self.btn_cancel.pack_forget()
+        self.btn_start.config(state="normal")
+        self.lbl_progress.config(text="已取消")
+        self._put("log", "已取消，未執行任何改名。\n")
 
-def _write_preview(path: Path, can_rename: list, uncertain: list) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("AV Code Rename — 審閱清單\n")
-        f.write(f"生成時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"可更名：{len(can_rename)} 筆  不確定：{len(uncertain)} 筆\n\n")
-        f.write("── 可更名 ──\n")
-        for i, item in enumerate(can_rename, 1):
-            f.write(f"{i:03d}  {item['file'].name}\n")
-            f.write(f"     → {item['new_name']}\n")
-        f.write("\n── 不確定（維持原狀）──\n")
-        for i, item in enumerate(uncertain, 1):
-            f.write(f"{len(can_rename)+i:03d}  {item['file'].name}  ({item['reason']})\n")
-
-
-def phase4_execute(can_rename: list, uncertain: list, cfg: dict) -> None:
-    console.print("\n[bold cyan]執行更名中...[/bold cyan]")
-    success = 0
-    failed = []
-
-    with Progress(BarColumn(), TextColumn("{task.completed}/{task.total}"),
-                  console=console) as progress:
-        task = progress.add_task("", total=len(can_rename))
-        for item in can_rename:
-            ok = renamer.rename_file(item["file"], item["new_name"])
-            if ok:
-                renamer.write_processed_log(
-                    cfg["processed_log"], item["file"].name, item["new_name"]
-                )
+    def _do_rename(self):
+        cfg = config.load()
+        log_file = str(SCRIPT_DIR / cfg["processed_log"])
+        skipped_file = str(SCRIPT_DIR / cfg["skipped_log"])
+        success = fail = 0
+        for src, new_name in self._pending:
+            if rename_file(src, new_name):
+                write_processed_log(log_file, src.name, new_name)
                 success += 1
             else:
-                failed.append(item["file"].name)
-            progress.advance(task)
+                fail += 1
+                self._put("log", f"✗ 改名失敗: {src.name}\n")
+        if self._skipped:
+            sk_path = Path(skipped_file)
+            existing = {}
+            if sk_path.exists():
+                with open(sk_path, encoding="utf-8") as f:
+                    existing = json.load(f)
+            for fname, reason in self._skipped:
+                existing[fname] = reason
+            with open(sk_path, "w", encoding="utf-8") as f:
+                json.dump(existing, f, ensure_ascii=False, indent=2)
+        self._put("done_rename", (success, fail, len(self._skipped)))
 
-    if uncertain:
-        skipped_entries = [
-            {
-                "filename": item["file"].name,
-                "reason": item["reason"],
-                "skipped_at": datetime.now().isoformat(),
-            }
-            for item in uncertain
-        ]
-        renamer.write_skipped_log(cfg["skipped_log"], skipped_entries)
+    # ── 執行緒安全 UI 更新 ────────────────────────────────────
 
-    console.print()
-    console.print(f"  [green]✓ 成功更名：{success} 個[/green]")
-    if failed:
-        console.print(f"  [red]✗ 失敗：{len(failed)} 個[/red]")
-        for name in failed:
-            console.print(f"      {name}")
-    console.print(f"  [dim]─ 不確定，維持原狀：{len(uncertain)} 個[/dim]")
-    if uncertain:
-        console.print(f"  [dim]  （已記錄至 {cfg['skipped_log']}）[/dim]")
-    console.print()
+    def _put(self, msg_type: str, data):
+        self.msg_queue.put((msg_type, data))
+
+    def _poll_queue(self):
+        try:
+            while True:
+                msg_type, data = self.msg_queue.get_nowait()
+                if msg_type == "log":
+                    self.log_text.config(state="normal")
+                    self.log_text.insert("end", data)
+                    self.log_text.see("end")
+                    self.log_text.config(state="disabled")
+                elif msg_type == "progress":
+                    cur, total, label = data
+                    self.progress_bar["value"] = cur
+                    self.lbl_progress.config(text=label)
+                elif msg_type == "switch_progress":
+                    self.progress_bar.stop()
+                    self.progress_bar.config(mode="determinate", maximum=data, value=0)
+                elif msg_type == "done_query":
+                    self.progress_bar.stop()
+                    n_ok, n_skip = len(self._pending), len(self._skipped)
+                    self.lbl_progress.config(text=f"查詢完成 — {n_ok} 筆可改名，{n_skip} 筆跳過")
+                    self._put("log", f"\n── 共 {n_ok} 筆可改名，{n_skip} 筆跳過 ──\n")
+                    if n_ok > 0:
+                        self.btn_confirm.pack(side="left", padx=(0, 8), ipady=4)
+                    self.btn_cancel.pack(side="left", ipady=4)
+                elif msg_type == "done_rename":
+                    success, fail, skipped = data
+                    self.lbl_progress.config(
+                        text=f"完成 — 成功 {success} / 失敗 {fail} / 跳過 {skipped}")
+                    self.btn_confirm.pack_forget()
+                    self.btn_cancel.pack_forget()
+                    self.btn_start.config(state="normal")
+                elif msg_type == "error":
+                    self.progress_bar.stop()
+                    self.lbl_progress.config(text="發生錯誤，請查看上方記錄")
+                    self.btn_start.config(state="normal")
+        except queue.Empty:
+            pass
+        self.root.after(100, self._poll_queue)
 
 
 def main():
-    os.system("cls")
-    show_cth_banner()
-
-    cfg = config.load()
-
-    console.print(f"[dim]目標資料夾：{cfg['target_dir'] or '（未設定）'}[/dim]")
-    if cfg["target_dir"]:
-        console.print("按 [bold]Enter[/bold] 開始掃描  [dim]|[/dim]  輸入 [bold]C[/bold] 更改資料夾")
-        ans = input().strip().upper()
-        if ans == "C":
-            cfg["target_dir"] = ""
-    cfg = ensure_target_dir(cfg)
-
-    files = phase1_scan(cfg)
-    if not files:
-        console.print("[green]沒有待處理的檔案，全部已處理完畢。[/green]")
-        input("\n按 Enter 關閉")
-        return
-
-    can_rename, uncertain = phase2_query(files, cfg)
-
-    confirmed = phase3_review(can_rename, uncertain)
-    if not confirmed:
-        return
-
-    phase4_execute(can_rename, uncertain, cfg)
-    input("按 Enter 關閉")
+    root = tk.Tk()
+    root.lift()
+    root.attributes("-topmost", True)
+    root.after(500, lambda: root.attributes("-topmost", False))
+    AVRenameApp(root)
+    root.mainloop()
 
 
 if __name__ == "__main__":
