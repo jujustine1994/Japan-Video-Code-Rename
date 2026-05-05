@@ -27,8 +27,10 @@ class AVRenameApp:
         self.root.resizable(False, False)
 
         self.msg_queue: queue.Queue = queue.Queue()
-        self._pending: list = []   # (Path, str)
-        self._skipped: list = []   # (str, str)
+        self._pending: list = []        # (Path, str)
+        self._skipped: list = []        # (str, str)
+        self._mode = tk.StringVar(value="folder")
+        self._selected_files: list = [] # list of Path (只在 files 模式使用)
 
         self._cfg = config.load()
         self._format_order: list = self._cfg.get("format_order", ["code", "actress", "title"])
@@ -44,10 +46,22 @@ class AVRenameApp:
         # 目標資料夾
         frame_dir = ttk.LabelFrame(self.root, text=" 目標資料夾 ", padding=8)
         frame_dir.grid(row=0, column=0, sticky="ew", **pad)
-        frame_dir.columnconfigure(0, weight=1)
+        frame_dir.columnconfigure(1, weight=1)
+
+        # 模式選擇
+        ttk.Radiobutton(frame_dir, text="整個資料夾", variable=self._mode,
+                        value="folder", command=self._on_mode_change).grid(
+            row=0, column=0, sticky="w", padx=(0, 12))
+        ttk.Radiobutton(frame_dir, text="選擇檔案", variable=self._mode,
+                        value="files", command=self._on_mode_change).grid(
+            row=0, column=1, sticky="w")
+
+        # 路徑欄位 + 瀏覽
         self.dir_var = tk.StringVar(value=self._cfg.get("target_dir", ""))
-        ttk.Entry(frame_dir, textvariable=self.dir_var, width=52).grid(row=0, column=0, sticky="ew")
-        ttk.Button(frame_dir, text="瀏覽", command=self._browse).grid(row=0, column=1, padx=(6, 0))
+        self.entry_dir = ttk.Entry(frame_dir, textvariable=self.dir_var, width=52)
+        self.entry_dir.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        ttk.Button(frame_dir, text="瀏覽", command=self._browse).grid(
+            row=1, column=2, padx=(6, 0), pady=(6, 0))
 
         # 命名格式
         frame_fmt = ttk.LabelFrame(self.root, text=" 命名格式順序 ", padding=8)
@@ -94,10 +108,29 @@ class AVRenameApp:
 
     # ── UI 互動 ──────────────────────────────────────────────
 
+    def _on_mode_change(self):
+        if self._mode.get() == "folder":
+            self.entry_dir.config(state="normal")
+            self.dir_var.set(self._cfg.get("target_dir", ""))
+            self._selected_files = []
+        else:
+            self.entry_dir.config(state="readonly")
+            self.dir_var.set("（尚未選擇檔案）")
+            self._selected_files = []
+
     def _browse(self):
-        d = filedialog.askdirectory()
-        if d:
-            self.dir_var.set(d)
+        if self._mode.get() == "folder":
+            d = filedialog.askdirectory()
+            if d:
+                self.dir_var.set(d)
+        else:
+            FILETYPES = [("影片檔案", "*.mp4 *.webm *.srt"), ("所有檔案", "*.*")]
+            paths = filedialog.askopenfilenames(filetypes=FILETYPES)
+            if paths:
+                self._selected_files = [Path(p) for p in paths]
+                self.entry_dir.config(state="normal")
+                self.dir_var.set(f"已選擇 {len(self._selected_files)} 個檔案")
+                self.entry_dir.config(state="readonly")
 
     def _move_up(self):
         sel = self.fmt_list.curselection()
@@ -131,14 +164,19 @@ class AVRenameApp:
     # ── 執行流程 ──────────────────────────────────────────────
 
     def _start(self):
-        target_dir = self.dir_var.get().strip()
-        if not os.path.isdir(target_dir):
-            messagebox.showerror("錯誤", "請選擇有效的目標資料夾")
-            return
-        cfg = config.load()
-        cfg["target_dir"] = target_dir
-        cfg["format_order"] = self._format_order
-        config.save(cfg)
+        if self._mode.get() == "folder":
+            target_dir = self.dir_var.get().strip()
+            if not os.path.isdir(target_dir):
+                messagebox.showerror("錯誤", "請選擇有效的目標資料夾")
+                return
+            cfg = config.load()
+            cfg["target_dir"] = target_dir
+            cfg["format_order"] = self._format_order
+            config.save(cfg)
+        else:
+            if not self._selected_files:
+                messagebox.showerror("錯誤", "請先選擇要處理的檔案")
+                return
 
         self.log_text.config(state="normal")
         self.log_text.delete("1.0", "end")
@@ -152,15 +190,23 @@ class AVRenameApp:
         self._pending = []
         self._skipped = []
 
-        threading.Thread(target=self._worker, args=(target_dir,), daemon=True).start()
+        threading.Thread(target=self._worker, daemon=True).start()
 
-    def _worker(self, target_dir: str):
+    def _worker(self):
         try:
             cfg = config.load()
             log_file = str(SCRIPT_DIR / cfg["processed_log"])
             cache_file = str(SCRIPT_DIR / cfg["cache_file"])
 
-            files = scan(target_dir, log_file)
+            if self._mode.get() == "folder":
+                target_dir = self.dir_var.get().strip()
+                files = scan(target_dir, log_file)
+            else:
+                from scanner import load_processed_log, SUPPORTED_EXTS
+                processed = load_processed_log(log_file)
+                files = [f for f in self._selected_files
+                         if f.suffix.lower() in SUPPORTED_EXTS and f.name not in processed]
+
             self._put("log", f"掃描完成，找到 {len(files)} 個待處理檔案\n")
 
             if not files:
