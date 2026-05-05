@@ -24,7 +24,12 @@ def load_processed_log(log_file: str) -> set:
     if not path.exists():
         return set()
     with open(path, encoding="utf-8") as f:
-        return set(json.load(f).keys())
+        data = json.load(f)
+    names = set(data.keys())
+    for entry in data.values():
+        if isinstance(entry, dict) and "new_filename" in entry:
+            names.add(entry["new_filename"])
+    return names
 
 
 def scan(target_dir: str, processed_log_file: str) -> list:
