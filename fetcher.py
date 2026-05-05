@@ -3,13 +3,16 @@ sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 
 import json
-from datetime import datetime
+import random
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 from playwright_stealth.stealth import Stealth
 from renamer import strip_actress_suffix
 
 JAVDB_BASE = "https://javdb.com"
+NO_DATA_TTL_DAYS = 7
 
 
 def _load_json(path: str) -> dict:
@@ -72,11 +75,23 @@ class Fetcher:
 
     def query(self, code: str) -> dict | None:
         if code in self.cache:
-            return self.cache[code]
+            cached = self.cache[code]
+            if isinstance(cached, dict) and cached.get("no_data"):
+                try:
+                    age = datetime.now() - datetime.fromisoformat(cached["queried_at"])
+                    if age < timedelta(days=NO_DATA_TTL_DAYS):
+                        return None
+                except Exception:
+                    pass
+            else:
+                return cached
         result = self._query_javdb(code)
+        time.sleep(random.uniform(1.0, 2.0))
         if result:
             self.cache[code] = result
-            self._save_cache()
+        else:
+            self.cache[code] = {"no_data": True, "queried_at": datetime.now().isoformat()}
+        self._save_cache()
         return result
 
     def _query_javdb(self, code: str) -> dict | None:
@@ -164,20 +179,15 @@ class Fetcher:
             url = actor_href if actor_href.startswith("http") else f"{JAVDB_BASE}{actor_href}"
             page.goto(url, wait_until="domcontentloaded", timeout=15000)
 
+            # javdb actor page h2 format:
+            #   male:   "{name}\n男優, {count} 部影片"
+            #   female: "{name}\n{aliases}\n{count} 部影片"  (no gender label)
             gender = "unknown"
-            for tag_el in page.query_selector_all(".tags .tag, .actor-bio span"):
-                text = tag_el.inner_text().strip()
-                if "女優" in text or "female" in text.lower():
-                    gender = "female"
-                    break
-                if "男優" in text or "male" in text.lower():
+            h2 = page.query_selector("h2")
+            if h2:
+                text = h2.inner_text()
+                if "男優" in text:
                     gender = "male"
-                    break
-
-            if gender == "unknown":
-                meta = page.query_selector(".actor-bio, .meta")
-                if meta and "女優" in meta.inner_text():
-                    gender = "female"
 
             self.gender_cache[actor_href] = gender
             self._save_cache()

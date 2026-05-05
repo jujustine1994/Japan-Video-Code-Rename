@@ -6,7 +6,6 @@ from collections import defaultdict
 SUPPORTED_EXTS = {".mp4", ".webm", ".srt"}
 _CODE_RE = re.compile(r"([A-Za-z]{2,10})-(\d{2,5})")
 _CODE_NOHYPHEN_RE = re.compile(r"([A-Za-z]{2,10})[\s_-]?(\d{3,5})")
-_CJK_RE = re.compile(r"[぀-ヿ一-鿿]")
 
 
 def extract_code(filename: str) -> str | None:
@@ -43,8 +42,6 @@ def scan(target_dir: str, processed_log_file: str) -> list:
             continue
         if f.name in processed:
             continue
-        if _CJK_RE.search(f.stem):
-            continue  # already has Japanese/Chinese text → already renamed
         to_process.append(f)
     return to_process
 
