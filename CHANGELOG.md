@@ -21,6 +21,10 @@
 
 ## 更新記錄
 
+### 2026-05-05（第四版）
+- 查詢 javdb 每筆間隔 1–2 秒隨機延遲，避免 rate limit
+- 查無資料的番號寫入 cache（`no_data: true`），7 天內重啟不重查
+
 ### 2026-05-05（第三版）
 - 修復 processed_log bug：改名後的檔案下次掃描仍會重複出現
 - `load_processed_log()` 現在同時比對原始檔名（key）與改名後檔名（new_filename），命中任一即跳過
