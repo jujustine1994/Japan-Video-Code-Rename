@@ -98,7 +98,7 @@ class AVRenameApp:
         self.log_text.pack(fill="x")
 
         # 審閱清單（查詢完畢後顯示，初始隱藏）
-        self.frame_review = ttk.LabelFrame(self.root, text=" 審閱清單 — 點選列切換勾選 ", padding=8)
+        self.frame_review = ttk.LabelFrame(self.root, text=" 審閱清單 — 點選✔欄切換勾選 / 雙擊新檔名可編輯 ", padding=8)
         # row=4，但 grid() 在 _show_review() 裡呼叫
 
         # Treeview
@@ -118,7 +118,8 @@ class AVRenameApp:
         self.tree.column("check", width=32,  stretch=False, anchor="center")
         self.tree.column("old",   width=280, stretch=True)
         self.tree.column("new",   width=280, stretch=True)
-        self.tree.bind("<Button-1>", self._toggle_check)
+        self.tree.bind("<Button-1>",   self._toggle_check)
+        self.tree.bind("<Double-1>",   self._start_edit)
 
         vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
@@ -203,11 +204,38 @@ class AVRenameApp:
 
     def _toggle_check(self, event):
         iid = self.tree.identify_row(event.y)
-        if not iid:
+        col = self.tree.identify_column(event.x)
+        if not iid or col != "#1":  # 只有點 ✔ 欄才切換
             return
         current = self.tree.set(iid, "check")
         self.tree.set(iid, "check", CHECK_OFF if current == CHECK_ON else CHECK_ON)
         self._update_checked_label()
+
+    def _start_edit(self, event):
+        iid = self.tree.identify_row(event.y)
+        col = self.tree.identify_column(event.x)
+        if not iid or col != "#3":  # 只有雙擊「新檔名」欄才編輯
+            return
+        bbox = self.tree.bbox(iid, "new")
+        if not bbox:
+            return
+        x, y, w, h = bbox
+        val = self.tree.set(iid, "new")
+        var = tk.StringVar(value=val)
+        entry = ttk.Entry(self.tree, textvariable=var, font=("Consolas", 9))
+        entry.place(x=x, y=y, width=w, height=h)
+        entry.select_range(0, "end")
+        entry.focus_set()
+
+        def confirm(e=None):
+            new_val = var.get().strip()
+            if new_val:
+                self.tree.set(iid, "new", new_val)
+            entry.destroy()
+
+        entry.bind("<Return>",   confirm)
+        entry.bind("<Escape>",   lambda e: entry.destroy())
+        entry.bind("<FocusOut>", confirm)
 
     def _select_all(self):
         for iid in self.tree.get_children():
@@ -322,9 +350,11 @@ class AVRenameApp:
             self._put("error", str(e))
 
     def _confirm(self):
-        to_rename = [(self._item_map[iid])
-                     for iid in self.tree.get_children()
-                     if self.tree.set(iid, "check") == CHECK_ON]
+        to_rename = [
+            (self._item_map[iid][0], self.tree.set(iid, "new"))
+            for iid in self.tree.get_children()
+            if self.tree.set(iid, "check") == CHECK_ON
+        ]
         if not to_rename:
             messagebox.showwarning("提示", "沒有勾選任何檔案")
             return
