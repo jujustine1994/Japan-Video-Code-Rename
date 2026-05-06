@@ -8,6 +8,8 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from playwright.sync_api import TimeoutError as PWTimeout
+
 NO_DATA_TTL_DAYS = 7  # 與 fetcher.NO_DATA_TTL_DAYS 保持一致
 
 
@@ -145,8 +147,6 @@ class LookupEnricher:
         return new_entries, last_page
 
     def _fetch_listing_page(self, fetcher, page_num: int) -> list[tuple[str, str]]:
-        from playwright.sync_api import TimeoutError as PWTimeout
-
         page = fetcher._new_page()
         try:
             url = f"https://javdb.com/videos?page={page_num}"
