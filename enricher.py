@@ -81,7 +81,40 @@ class LookupEnricher:
         return new_entries
 
     def retry_no_data(self, fetcher, progress_cb=None) -> int:
-        raise NotImplementedError
+        to_retry = []
+        for code, entry in self.cache.items():
+            if code.startswith("_") or not isinstance(entry, dict):
+                continue
+            if not entry.get("no_data"):
+                continue
+            try:
+                age = datetime.now() - datetime.fromisoformat(entry["queried_at"])
+                if age >= timedelta(days=NO_DATA_TTL_DAYS):
+                    to_retry.append(code)
+            except Exception:
+                to_retry.append(code)
+
+        recovered = 0
+        for code in to_retry:
+            result = fetcher._query_javdb(code)
+            if result:
+                self.lookup[code] = {"title": result["title"], "actresses": result["actresses"]}
+                fetcher.cache[code] = result
+                self.cache[code] = result  # keep in sync
+                recovered += 1
+                if progress_cb:
+                    progress_cb(f"補回: {code} → {result['title']}")
+            else:
+                reset_entry = {"no_data": True, "queried_at": datetime.now().isoformat()}
+                fetcher.cache[code] = reset_entry
+                self.cache[code] = reset_entry  # keep enricher.cache in sync
+            time.sleep(random.uniform(1.0, 2.0))
+
+        self._save_lookup()
+        fetcher._save_cache()
+        if progress_cb:
+            progress_cb(f"retry 完成：{recovered}/{len(to_retry)} 筆補回")
+        return recovered
 
     def scrape_listing_pages(self, fetcher, start_page: int = 1,
                              max_pages: int = 100, progress_cb=None) -> tuple[int, int]:

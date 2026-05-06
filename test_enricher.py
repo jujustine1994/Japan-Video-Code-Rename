@@ -114,3 +114,58 @@ def test_scrape_new_releases_respects_max_pages(tmp_files):
         enricher.scrape_new_releases(mock_fetcher, stop_after_known=9999, max_pages=3)
 
     assert page_calls[0] == 3
+
+
+def test_retry_no_data_recovers_expired_entries(tmp_files):
+    lookup_file, cache_file = tmp_files
+    old_time = (datetime.now() - timedelta(days=8)).isoformat()
+    cache_data = {"RETRY-001": {"no_data": True, "queried_at": old_time}}
+    Path(cache_file).write_text(json.dumps(cache_data), encoding="utf-8")
+
+    enricher = LookupEnricher(lookup_file, cache_file)
+    mock_fetcher = MagicMock()
+    mock_fetcher._query_javdb.return_value = {
+        "title": "復活した作品",
+        "actresses": ["回収女優"],
+        "queried_at": datetime.now().isoformat(),
+    }
+
+    with patch("time.sleep"):
+        recovered = enricher.retry_no_data(mock_fetcher)
+
+    assert recovered == 1
+    assert enricher.lookup["RETRY-001"]["title"] == "復活した作品"
+    mock_fetcher._query_javdb.assert_called_once_with("RETRY-001")
+
+
+def test_retry_no_data_skips_fresh_entries(tmp_files):
+    lookup_file, cache_file = tmp_files
+    cache_data = {"FRESH-001": {"no_data": True, "queried_at": datetime.now().isoformat()}}
+    Path(cache_file).write_text(json.dumps(cache_data), encoding="utf-8")
+
+    enricher = LookupEnricher(lookup_file, cache_file)
+    mock_fetcher = MagicMock()
+
+    with patch("time.sleep"):
+        recovered = enricher.retry_no_data(mock_fetcher)
+
+    assert recovered == 0
+    mock_fetcher._query_javdb.assert_not_called()
+
+
+def test_retry_no_data_resets_ttl_on_failure(tmp_files):
+    lookup_file, cache_file = tmp_files
+    old_time = (datetime.now() - timedelta(days=8)).isoformat()
+    cache_data = {"STILL-GONE-001": {"no_data": True, "queried_at": old_time}}
+    Path(cache_file).write_text(json.dumps(cache_data), encoding="utf-8")
+
+    enricher = LookupEnricher(lookup_file, cache_file)
+    mock_fetcher = MagicMock()
+    mock_fetcher._query_javdb.return_value = None
+
+    with patch("time.sleep"):
+        recovered = enricher.retry_no_data(mock_fetcher)
+
+    assert recovered == 0
+    assert enricher.cache["STILL-GONE-001"]["no_data"] is True
+    assert enricher.cache["STILL-GONE-001"]["queried_at"] > old_time
