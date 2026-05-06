@@ -10,7 +10,7 @@
 規則檔: windows-tool.md
 類型: Windows 工具
 
-# AV Code Rename
+# 超級老司機整理器
 
 自動掃描資料夾，將命名不符規範的 AV 影片檔案，透過批次查詢 javdb.com 取得正確片名與女優名，產生更名清單後一次確認執行。
 

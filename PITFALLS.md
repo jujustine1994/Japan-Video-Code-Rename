@@ -87,3 +87,14 @@ sys.stderr.reconfigure(encoding="utf-8")
 **原因**：javbus 從原本的 `driver-verify`（偵測 webdriver）改為地區封鎖，台灣 IP 直接被擋。
 **解法**：放棄 javbus。
 **禁止**：不要再嘗試任何方式存取 javbus（requests / cloudscraper / Playwright 均無效）。
+
+---
+
+### P10：.bat 啟動器無法自訂 Windows 工具列圖示
+
+**問題**：雙擊 `.bat` 啟動程式後，工具列顯示的是 `powershell.exe` 的原生圖示，無法顯示自訂圖示。
+**原因**：Windows 工具列圖示是依照實際執行的程序（process）決定的。本專案鏈結為 `.bat` → `launcher.ps1` → `python main.py`，工具列看到的是 PowerShell 程序，不是啟動器本身。
+**已評估方案**：
+- 建立帶圖示的捷徑並釘選到工具列（需從捷徑啟動才有效，直接點 `.bat` 無效）
+- 用 PyInstaller 打包 `main.py` 為 `.exe`（最完整，但 Playwright 相依複雜）
+**決定**：暫不處理，維持原生圖示。若日後要打包分發再考慮 PyInstaller。

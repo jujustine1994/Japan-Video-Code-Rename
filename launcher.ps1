@@ -1,7 +1,7 @@
 ﻿# AV Code Rename Launcher
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$host.UI.RawUI.WindowTitle = "AV Code Rename"
+$host.UI.RawUI.WindowTitle = "超級老司機整理器"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
