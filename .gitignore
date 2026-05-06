@@ -7,3 +7,5 @@ __pycache__/
 debug_html/
 cache/
 processed_log.json
+.claude/
+config.json
