@@ -73,6 +73,7 @@ def test_scrape_new_releases_adds_new_entries(tmp_files):
     assert result == 2
     assert "NEW-001" in enricher.lookup
     assert enricher.lookup["NEW-001"]["partial"] is True
+    assert enricher.lookup["NEW-002"]["partial"] is True
 
 
 def test_scrape_new_releases_stops_on_consecutive_known(tmp_files):
