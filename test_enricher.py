@@ -161,6 +161,7 @@ def test_retry_no_data_resets_ttl_on_failure(tmp_files):
 
     enricher = LookupEnricher(lookup_file, cache_file)
     mock_fetcher = MagicMock()
+    mock_fetcher.cache = {}
     mock_fetcher._query_javdb.return_value = None
 
     with patch("time.sleep"):
@@ -169,3 +170,4 @@ def test_retry_no_data_resets_ttl_on_failure(tmp_files):
     assert recovered == 0
     assert enricher.cache["STILL-GONE-001"]["no_data"] is True
     assert enricher.cache["STILL-GONE-001"]["queried_at"] > old_time
+    assert mock_fetcher.cache["STILL-GONE-001"]["queried_at"] > old_time
