@@ -171,3 +171,27 @@ def test_retry_no_data_resets_ttl_on_failure(tmp_files):
     assert enricher.cache["STILL-GONE-001"]["no_data"] is True
     assert enricher.cache["STILL-GONE-001"]["queried_at"] > old_time
     assert mock_fetcher.cache["STILL-GONE-001"]["queried_at"] > old_time
+
+
+def test_scrape_listing_pages_uses_start_page_and_returns_count(tmp_files):
+    lookup_file, cache_file = tmp_files
+    enricher = LookupEnricher(lookup_file, cache_file)
+    mock_fetcher = MagicMock()
+
+    pages_visited = []
+    def mock_fetch(fetcher, page_num):
+        pages_visited.append(page_num)
+        if page_num > 102:
+            return []
+        return [(f"CODE-{page_num}-{i}", f"title{i}") for i in range(3)]
+
+    enricher._fetch_listing_page = mock_fetch
+
+    with patch("time.sleep"):
+        new_count, last_page = enricher.scrape_listing_pages(
+            mock_fetcher, start_page=100, max_pages=5
+        )
+
+    assert pages_visited == [100, 101, 102, 103]  # 103 returns empty, stops
+    assert new_count == 3 * 3  # pages 100-102, 3 entries each
+    assert last_page == 102

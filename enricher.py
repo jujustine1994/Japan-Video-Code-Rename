@@ -118,7 +118,57 @@ class LookupEnricher:
 
     def scrape_listing_pages(self, fetcher, start_page: int = 1,
                              max_pages: int = 100, progress_cb=None) -> tuple[int, int]:
-        raise NotImplementedError
+        new_entries = 0
+        last_page = start_page - 1
+
+        for i, page_num in enumerate(range(start_page, start_page + max_pages)):
+            if i > 0 and i % 100 == 0:
+                fetcher.stop()
+                fetcher.start()
+
+            items = self._fetch_listing_page(fetcher, page_num)
+            if not items:
+                break
+
+            for code, title in items:
+                if code not in self.lookup:
+                    self.lookup[code] = {"title": title, "actresses": [], "partial": True}
+                    new_entries += 1
+
+            self._save_lookup()
+            last_page = page_num
+
+            if progress_cb:
+                progress_cb(f"頁 {page_num}: 累計新增 {new_entries} 筆")
+            time.sleep(random.uniform(3.0, 8.0))
+
+        return new_entries, last_page
 
     def _fetch_listing_page(self, fetcher, page_num: int) -> list[tuple[str, str]]:
-        raise NotImplementedError
+        from playwright.sync_api import TimeoutError as PWTimeout
+
+        page = fetcher._new_page()
+        try:
+            url = f"https://javdb.com/videos?page={page_num}"
+            page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            try:
+                page.wait_for_selector(".video-title", timeout=8000)
+            except PWTimeout:
+                return []
+
+            items = []
+            for card in page.query_selector_all("div.item"):
+                code_el = card.query_selector(".video-title strong")
+                title_el = card.query_selector(".video-title")
+                if not code_el or not title_el:
+                    continue
+                code = code_el.inner_text().strip()
+                full_text = title_el.inner_text().strip()
+                title = full_text.replace(code, "").strip()
+                if code:
+                    items.append((code, title))
+            return items
+        except Exception:
+            return []
+        finally:
+            page.close()
