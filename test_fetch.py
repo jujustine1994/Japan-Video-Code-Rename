@@ -146,3 +146,16 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ── config 預設值測試 ───────────────────────────────────────────
+
+import config
+
+def test_config_has_update_stop_after_known():
+    cfg = config.load()
+    assert cfg["update_stop_after_known"] == 50
+
+def test_config_has_update_max_new_release_pages():
+    cfg = config.load()
+    assert cfg["update_max_new_release_pages"] == 10
