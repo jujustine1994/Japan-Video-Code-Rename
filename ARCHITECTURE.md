@@ -27,6 +27,7 @@ D:\Adobe Reader\Adobe Acrobat XI Pro繁體中文\Adobe Acrobat XI Pro v11.0.9 fo
 | `launcher.ps1` | ✅ 完成 | 環境檢查 + 啟動器 |
 | `AV Code Rename 啟動器.bat` | ✅ 完成 | 雙擊入口 |
 | `requirements.txt` | ✅ 完成 | 主程式相依套件 |
+| `data/javdb_lookup.json` | ✅ 完成 | 永久番號對照表（git 追蹤，無時間戳） |
 
 ## 計畫架構
 
@@ -70,14 +71,21 @@ Phase 3（使用者確認後）：批次改名
 | javbus.com | ❌ webdriver 偵測 | 無法使用 |
 | javlibrary.com | ❌ Cloudflare | 無法使用 |
 
-## 快取策略
+## 快取策略（雙層）
 
-- 路徑：`cache/javdb_cache.json`
+### 第一層：永久對照表 `data/javdb_lookup.json`（git 追蹤）
+- 格式：`{ "DDT-435": { "title": "...", "actresses": [...] } }`
+- 無時間戳、無 no_data，只存成功查詢結果
+- 查詢優先命中此層（不過期），可手動維護與 git 追蹤
+
+### 第二層：操作快取 `cache/javdb_cache.json`（gitignore）
 - 成功格式：`{ "DDT-435": { "title": "...", "actresses": [...], "queried_at": "..." } }`
 - 查無資料格式：`{ "FNS-170": { "no_data": true, "queried_at": "..." } }`
 - 查無資料也寫入 cache，7 天內不重查（避免 rate limit）
-- 成功結果無過期（片名不會變）
-- 每筆查詢間隔 1–2 秒隨機延遲
+- 成功結果無過期，性別 cache（`_actors`）也存在此層
+
+查詢順序：lookup → cache → 打 javdb；成功後同步寫入兩層。
+每筆查詢間隔 1–2 秒隨機延遲。
 
 ## 處理日誌
 
@@ -91,6 +99,7 @@ Phase 3（使用者確認後）：批次改名
 {
   "target_dir": "D:\\...",
   "cache_file": "cache/javdb_cache.json",
+  "lookup_file": "data/javdb_lookup.json",
   "processed_log": "processed_log.json",
   "skipped_log": "skipped.json",
   "format_order": ["code", "actress", "title"]

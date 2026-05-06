@@ -26,6 +26,8 @@
 - 新增 19 個 `extract_code` 邊界案例單元測試（大小寫、括弧、無連字號、品質標籤、日期前綴、多集後綴、溢位等），總計 24 tests passed
 - 審閱清單改為獨立 Toplevel 視窗，查詢完顯示「開啟審閱清單（N 筆）」按鈕，點擊才開，視窗定位在主視窗右側
 - 新增重複番號處理：同番號多檔案自動補 `(1)(2)(3)` 編號，審閱視窗頂部顯示橘色警告條，重複列底色標黃，可雙擊修改
+- 新增 `data/javdb_lookup.json`：永久番號對照表，格式乾淨（無時間戳、無 no_data），git 追蹤；已從 cache 遷移 22 筆
+- 快取改為雙層架構：lookup（永久，最優先）→ cache（含 no_data TTL）→ 打 javdb；查詢成功後同步寫入兩層
 - 研究替代資料來源（javscraper、r18.dev API）
 - 實測結論：台灣 IP 下 DMM/r18.dev 鎖區（403）、javbus 改為地區封鎖，javscraper 三個來源均失敗
 - 新增 PITFALLS P7（javscraper DMM 鎖區）、P8（r18.dev 403）、P9（javbus 地區封鎖）
