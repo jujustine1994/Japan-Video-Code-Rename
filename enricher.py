@@ -50,7 +50,35 @@ class LookupEnricher:
 
     def scrape_new_releases(self, fetcher, stop_after_known: int = 50,
                             max_pages: int = 10, progress_cb=None) -> int:
-        raise NotImplementedError
+        new_entries = 0
+        consecutive_known = 0
+
+        for page_num in range(1, max_pages + 1):
+            items = self._fetch_listing_page(fetcher, page_num)
+            if not items:
+                break
+
+            page_new = 0
+            for code, title in items:
+                if code in self.lookup:
+                    consecutive_known += 1
+                    if consecutive_known >= stop_after_known:
+                        self._save_lookup()
+                        if progress_cb:
+                            progress_cb(f"連續 {stop_after_known} 筆已知，停止追新，新增 {new_entries} 筆")
+                        return new_entries
+                else:
+                    consecutive_known = 0
+                    self.lookup[code] = {"title": title, "actresses": [], "partial": True}
+                    new_entries += 1
+                    page_new += 1
+
+            self._save_lookup()
+            if progress_cb:
+                progress_cb(f"頁 {page_num}: +{page_new} 新番號（累計 {new_entries}）")
+            time.sleep(random.uniform(3.0, 8.0))
+
+        return new_entries
 
     def retry_no_data(self, fetcher, progress_cb=None) -> int:
         raise NotImplementedError
