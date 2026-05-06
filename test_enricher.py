@@ -5,7 +5,6 @@ sys.stderr.reconfigure(encoding="utf-8")
 import json
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock
 
 from enricher import LookupEnricher
 
