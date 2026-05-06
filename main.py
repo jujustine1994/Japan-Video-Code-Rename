@@ -110,6 +110,14 @@ class AVRenameApp:
             self.frame_action, text="✖  取消",
             command=self._cancel, width=12)
 
+        # 資料庫管理
+        frame_db = ttk.LabelFrame(self.root, text=" 資料庫 ", padding=8)
+        frame_db.grid(row=5, column=0, sticky="ew", padx=14, pady=(0, 8))
+        self.btn_update_db = ttk.Button(
+            frame_db, text="更新資料庫", command=self._update_db, width=18
+        )
+        self.btn_update_db.pack(anchor="w")
+
         self.root.columnconfigure(0, weight=1)
 
     # ── UI 互動 ──────────────────────────────────────────────
@@ -454,6 +462,44 @@ class AVRenameApp:
 
     # ── 執行緒安全 UI 更新 ────────────────────────────────────
 
+    def _update_db(self):
+        self.btn_update_db.config(state="disabled", text="更新中...")
+        self._put("log", "開始更新資料庫...\n")
+
+        cfg = self._cfg
+        stop_known  = cfg.get("update_stop_after_known", 50)
+        max_pages   = cfg.get("update_max_new_release_pages", 10)
+        lookup_file = cfg.get("lookup_file", "data/javdb_lookup.json")
+        cache_file  = cfg.get("cache_file", "cache/javdb_cache.json")
+
+        def run():
+            from fetcher import Fetcher
+            from enricher import LookupEnricher
+
+            fetcher  = Fetcher(cache_file, lookup_file)
+            enricher = LookupEnricher(lookup_file, cache_file)
+
+            fetcher.start()
+            try:
+                new = enricher.scrape_new_releases(
+                    fetcher,
+                    stop_after_known=stop_known,
+                    max_pages=max_pages,
+                    progress_cb=lambda msg: self.msg_queue.put(("log", msg + "\n")),
+                )
+                recovered = enricher.retry_no_data(
+                    fetcher,
+                    progress_cb=lambda msg: self.msg_queue.put(("log", msg + "\n")),
+                )
+                self.msg_queue.put(("log", f"更新完成：追新 +{new} 筆，補漏 +{recovered} 筆\n"))
+            except Exception as e:
+                self.msg_queue.put(("log", f"更新失敗：{e}\n"))
+            finally:
+                fetcher.stop()
+                self.msg_queue.put(("db_done", None))
+
+        threading.Thread(target=run, daemon=True).start()
+
     def _put(self, msg_type: str, data):
         self.msg_queue.put((msg_type, data))
 
@@ -492,6 +538,8 @@ class AVRenameApp:
                     self.btn_open_review.pack_forget()
                     self.btn_cancel.pack_forget()
                     self.btn_start.config(state="normal")
+                elif msg_type == "db_done":
+                    self.btn_update_db.config(state="normal", text="更新資料庫")
                 elif msg_type == "error":
                     self.progress_bar.stop()
                     self.lbl_progress.config(text="發生錯誤，請查看上方記錄")
