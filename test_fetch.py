@@ -2,6 +2,10 @@ import sys
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 
+import json
+from datetime import datetime
+from unittest.mock import MagicMock
+
 from fetcher import Fetcher
 from renamer import build_filename
 from scanner import extract_code
@@ -159,3 +163,47 @@ def test_config_has_update_stop_after_known():
 def test_config_has_update_max_new_release_pages():
     cfg = config.load()
     assert cfg["update_max_new_release_pages"] == 10
+
+
+# ── partial 自動補全測試 ──────────────────────────────────────
+
+def test_query_auto_completes_partial_entry(tmp_path):
+    lookup_file = tmp_path / "lookup.json"
+    cache_file = tmp_path / "cache.json"
+    lookup_file.write_text(
+        json.dumps({"PARTIAL-001": {"title": "仮タイトル", "actresses": [], "partial": True}}),
+        encoding="utf-8"
+    )
+    cache_file.write_text("{}", encoding="utf-8")
+
+    fetcher = Fetcher(str(cache_file), str(lookup_file))
+    fetcher._query_javdb = MagicMock(return_value={
+        "title": "正式タイトル",
+        "actresses": ["完全女優"],
+        "queried_at": datetime.now().isoformat(),
+    })
+
+    result = fetcher.query("PARTIAL-001")
+
+    fetcher._query_javdb.assert_called_once_with("PARTIAL-001")
+    assert result["actresses"] == ["完全女優"]
+    assert result["title"] == "正式タイトル"
+    assert "partial" not in fetcher.lookup.get("PARTIAL-001", {})
+
+
+def test_query_non_partial_entry_skips_network(tmp_path):
+    lookup_file = tmp_path / "lookup.json"
+    cache_file = tmp_path / "cache.json"
+    lookup_file.write_text(
+        json.dumps({"FULL-001": {"title": "完全作品", "actresses": ["既存女優"]}}),
+        encoding="utf-8"
+    )
+    cache_file.write_text("{}", encoding="utf-8")
+
+    fetcher = Fetcher(str(cache_file), str(lookup_file))
+    fetcher._query_javdb = MagicMock()
+
+    result = fetcher.query("FULL-001")
+
+    fetcher._query_javdb.assert_not_called()
+    assert result["title"] == "完全作品"

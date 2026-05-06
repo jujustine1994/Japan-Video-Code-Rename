@@ -93,6 +93,19 @@ class Fetcher:
     def query(self, code: str) -> dict | None:
         # 1. lookup 永久對照表（最優先，不過期）
         if code in self.lookup:
+            entry = self.lookup[code]
+            if entry.get("partial"):
+                result = self._query_javdb(code)
+                if result:
+                    self.lookup[code] = {"title": result["title"], "actresses": result["actresses"]}
+                    self._save_lookup()
+                    self.cache[code] = result
+                    self._save_cache()
+                    return self.lookup[code]
+                else:
+                    # 確認找不到：移除 partial 旗標避免重複嘗試
+                    self.lookup[code] = {"title": entry["title"], "actresses": []}
+                    self._save_lookup()
             return self.lookup[code]
 
         # 2. 操作層快取（含 no_data TTL）
