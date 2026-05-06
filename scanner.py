@@ -4,8 +4,8 @@ from pathlib import Path
 from collections import defaultdict
 
 SUPPORTED_EXTS = {".mp4", ".webm", ".srt"}
-_CODE_RE = re.compile(r"([A-Za-z]{2,10})-(\d{2,5})")
-_CODE_NOHYPHEN_RE = re.compile(r"([A-Za-z]{2,10})[\s_-]?(\d{3,5})")
+_CODE_RE = re.compile(r"([A-Za-z]{2,10})-(\d{2,5})(?!\d)")
+_CODE_NOHYPHEN_RE = re.compile(r"([A-Za-z]{2,10})[\s_-]?(\d{3,5})(?!\d)")
 
 
 def extract_code(filename: str) -> str | None:

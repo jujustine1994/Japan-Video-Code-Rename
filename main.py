@@ -10,6 +10,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, filedialog
 from pathlib import Path
 
+from collections import Counter
+
 import config
 from scanner import scan, extract_code
 from fetcher import Fetcher
@@ -29,11 +31,12 @@ class AVRenameApp:
         self.root.resizable(True, True)
 
         self.msg_queue: queue.Queue = queue.Queue()
-        self._pending: list = []        # (Path, str) — 所有查詢成功的項目
-        self._skipped: list = []        # (str, str)  — 查不到的項目
-        self._item_map: dict = {}       # tree iid → (Path, new_name)
+        self._pending: list = []
+        self._skipped: list = []
+        self._item_map: dict = {}
         self._mode = tk.StringVar(value="folder")
         self._selected_files: list = []
+        self._review_win = None
 
         self._cfg = config.load()
         self._format_order: list = self._cfg.get("format_order", ["code", "actress", "title"])
@@ -85,7 +88,7 @@ class AVRenameApp:
                                     command=self._start, width=22)
         self.btn_start.pack(ipady=6)
 
-        # 進度區（掃描/查詢期間用，小型 log）
+        # 進度區
         frame_prog = ttk.LabelFrame(self.root, text=" 處理進度 ", padding=8)
         frame_prog.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 4))
         self.lbl_progress = ttk.Label(frame_prog, text="等待開始...")
@@ -97,53 +100,17 @@ class AVRenameApp:
         )
         self.log_text.pack(fill="x")
 
-        # 審閱清單（查詢完畢後顯示，初始隱藏）
-        self.frame_review = ttk.LabelFrame(self.root, text=" 審閱清單 — 點選✔欄切換勾選 / 雙擊新檔名可編輯 ", padding=8)
-        # row=4，但 grid() 在 _show_review() 裡呼叫
-
-        # Treeview
-        tree_frame = tk.Frame(self.frame_review)
-        tree_frame.pack(fill="both", expand=True)
-
-        self.tree = ttk.Treeview(
-            tree_frame,
-            columns=("check", "old", "new"),
-            show="headings",
-            selectmode="none",
-            height=12,
-        )
-        self.tree.heading("check", text="✔")
-        self.tree.heading("old",   text="原始檔名")
-        self.tree.heading("new",   text="新檔名")
-        self.tree.column("check", width=32,  stretch=False, anchor="center")
-        self.tree.column("old",   width=280, stretch=True)
-        self.tree.column("new",   width=280, stretch=True)
-        self.tree.bind("<Button-1>",   self._toggle_check)
-        self.tree.bind("<Double-1>",   self._start_edit)
-
-        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=vsb.set)
-        self.tree.pack(side="left", fill="both", expand=True)
-        vsb.pack(side="right", fill="y")
-
-        # 全選/全不選
-        btn_row = tk.Frame(self.frame_review)
-        btn_row.pack(anchor="w", pady=(6, 0))
-        ttk.Button(btn_row, text="全選",   command=self._select_all,   width=8).pack(side="left", padx=(0, 4))
-        ttk.Button(btn_row, text="全不選", command=self._deselect_all, width=8).pack(side="left")
-        self.lbl_checked = ttk.Label(btn_row, text="")
-        self.lbl_checked.pack(side="left", padx=12)
-
-        # 確認/取消（初始隱藏）
-        self.frame_confirm = tk.Frame(self.root)
-        self.frame_confirm.grid(row=5, column=0, pady=(0, 12))
-        self.btn_confirm = ttk.Button(self.frame_confirm, text="✔  確認改名",
-                                      command=self._confirm, width=18)
-        self.btn_cancel = ttk.Button(self.frame_confirm, text="✖  取消",
-                                     command=self._cancel, width=12)
+        # 查詢完畢後的動作列（初始隱藏）
+        self.frame_action = tk.Frame(self.root)
+        self.frame_action.grid(row=4, column=0, pady=(0, 12))
+        self.btn_open_review = ttk.Button(
+            self.frame_action, text="📋  開啟審閱清單",
+            command=self._open_review_window, width=22)
+        self.btn_cancel = ttk.Button(
+            self.frame_action, text="✖  取消",
+            command=self._cancel, width=12)
 
         self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(4, weight=1)
 
     # ── UI 互動 ──────────────────────────────────────────────
 
@@ -200,12 +167,99 @@ class AVRenameApp:
         cfg["format_order"] = self._format_order
         config.save(cfg)
 
-    # ── 審閱清單 ─────────────────────────────────────────────
+    # ── 審閱清單視窗 ──────────────────────────────────────────
+
+    def _open_review_window(self):
+        if self._review_win and self._review_win.winfo_exists():
+            self._review_win.lift()
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title(f"審閱清單 — {len(self._pending)} 筆可改名")
+        win.resizable(True, True)
+        win.protocol("WM_DELETE_WINDOW", self._close_review)
+        self._review_win = win
+
+        # 定位到主視窗右側
+        self.root.update_idletasks()
+        x = self.root.winfo_x() + self.root.winfo_width() + 10
+        y = self.root.winfo_y()
+        win.geometry(f"720x540+{x}+{y}")
+
+        # 重複番號警告條（若有）
+        dup_count = sum(1 for _, _, is_dup in self._pending if is_dup)
+        if dup_count > 0:
+            warn_frame = tk.Frame(win, bg="#FFF3CD", pady=4)
+            warn_frame.pack(fill="x", padx=8, pady=(8, 0))
+            tk.Label(
+                warn_frame,
+                text=f"⚠  發現 {dup_count} 個重複番號，已自動加編號（可雙擊新檔名欄修改）",
+                bg="#FFF3CD", fg="#856404", padx=8,
+            ).pack(anchor="w")
+
+        # Treeview
+        tree_frame = tk.Frame(win)
+        tree_frame.pack(fill="both", expand=True, padx=8,
+                        pady=(4 if dup_count > 0 else 8, 0))
+
+        self.tree = ttk.Treeview(
+            tree_frame,
+            columns=("check", "old", "new"),
+            show="headings",
+            selectmode="none",
+            height=20,
+        )
+        self.tree.heading("check", text="✔")
+        self.tree.heading("old",   text="原始檔名")
+        self.tree.heading("new",   text="新檔名")
+        self.tree.column("check", width=32,  stretch=False, anchor="center")
+        self.tree.column("old",   width=300, stretch=True)
+        self.tree.column("new",   width=360, stretch=True)
+        self.tree.tag_configure("duplicate", background="#FFF3CD")
+        self.tree.bind("<Button-1>", self._toggle_check)
+        self.tree.bind("<Double-1>", self._start_edit)
+
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=vsb.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+
+        # 填入資料
+        self._item_map = {}
+        for src, new_name, is_dup in self._pending:
+            tags = ("duplicate",) if is_dup else ()
+            iid  = self.tree.insert("", "end", values=(CHECK_ON, src.name, new_name), tags=tags)
+            self._item_map[iid] = (src, new_name)
+
+        # 全選/全不選
+        btn_row = tk.Frame(win)
+        btn_row.pack(anchor="w", padx=8, pady=(6, 0))
+        ttk.Button(btn_row, text="全選",   command=self._select_all,   width=8).pack(side="left", padx=(0, 4))
+        ttk.Button(btn_row, text="全不選", command=self._deselect_all, width=8).pack(side="left")
+        self.lbl_checked = ttk.Label(btn_row, text="")
+        self.lbl_checked.pack(side="left", padx=12)
+        self._update_checked_label()
+
+        # 確認/關閉
+        btn_bottom = tk.Frame(win)
+        btn_bottom.pack(pady=(8, 12))
+        self.btn_confirm = ttk.Button(btn_bottom, text="✔  確認改名",
+                                      command=self._confirm, width=18)
+        self.btn_confirm.pack(side="left", padx=(0, 8), ipady=4)
+        ttk.Button(btn_bottom, text="✖  關閉",
+                   command=self._close_review, width=12).pack(side="left", ipady=4)
+
+    def _close_review(self):
+        if self._review_win and self._review_win.winfo_exists():
+            self._review_win.destroy()
+        self._review_win = None
+
+    # ── 審閱清單操作 ─────────────────────────────────────────
 
     def _toggle_check(self, event):
         iid = self.tree.identify_row(event.y)
         col = self.tree.identify_column(event.x)
-        if not iid or col != "#1":  # 只有點 ✔ 欄才切換
+        if not iid or col != "#1":
             return
         current = self.tree.set(iid, "check")
         self.tree.set(iid, "check", CHECK_OFF if current == CHECK_ON else CHECK_ON)
@@ -214,7 +268,7 @@ class AVRenameApp:
     def _start_edit(self, event):
         iid = self.tree.identify_row(event.y)
         col = self.tree.identify_column(event.x)
-        if not iid or col != "#3":  # 只有雙擊「新檔名」欄才編輯
+        if not iid or col != "#3":
             return
         bbox = self.tree.bbox(iid, "new")
         if not bbox:
@@ -253,21 +307,6 @@ class AVRenameApp:
                       if self.tree.set(iid, "check") == CHECK_ON)
         self.lbl_checked.config(text=f"已勾選 {checked} / {total} 筆")
 
-    def _show_review(self):
-        for iid in self.tree.get_children():
-            self.tree.delete(iid)
-        self._item_map = {}
-
-        for src, new_name in self._pending:
-            iid = self.tree.insert("", "end", values=(CHECK_ON, src.name, new_name))
-            self._item_map[iid] = (src, new_name)
-
-        self._update_checked_label()
-        self.frame_review.grid(row=4, column=0, sticky="nsew", padx=14, pady=(0, 4))
-
-    def _hide_review(self):
-        self.frame_review.grid_forget()
-
     # ── 執行流程 ──────────────────────────────────────────────
 
     def _start(self):
@@ -288,8 +327,8 @@ class AVRenameApp:
         self.log_text.config(state="normal")
         self.log_text.delete("1.0", "end")
         self.log_text.config(state="disabled")
-        self._hide_review()
-        self.btn_confirm.pack_forget()
+        self._close_review()
+        self.btn_open_review.pack_forget()
         self.btn_cancel.pack_forget()
         self.progress_bar.config(mode="indeterminate")
         self.progress_bar.start(10)
@@ -324,6 +363,9 @@ class AVRenameApp:
             self._put("switch_progress", len(files))
             fetcher = Fetcher(cache_file)
             fetcher.start()
+
+            # Phase 1: 查詢所有番號，收集 (Path, base_new_name)
+            fetched = []
             try:
                 for i, f in enumerate(files, 1):
                     code = extract_code(f.name)
@@ -337,13 +379,29 @@ class AVRenameApp:
                         self._skipped.append((f.name, "javdb 查無資料"))
                         self._put("log", f"⚠ {f.name} → javdb 查無資料\n")
                         continue
-                    new_name = build_filename(
+                    base_name = build_filename(
                         code, result["actresses"], result["title"],
                         f.suffix, format_order=self._format_order
                     )
-                    self._pending.append((f, new_name))
+                    fetched.append((f, base_name))
             finally:
                 fetcher.stop()
+
+            # Phase 2: 偵測重複，重複者全部補 (1)(2)(3)...
+            dup_set    = {name for name, cnt in Counter(n for _, n in fetched).items() if cnt > 1}
+            name_index: dict = {}
+            for f, base_name in fetched:
+                is_dup = base_name in dup_set
+                if is_dup:
+                    name_index[base_name] = name_index.get(base_name, 0) + 1
+                    n    = name_index[base_name]
+                    stem = Path(base_name).stem
+                    ext  = Path(base_name).suffix
+                    new_name = f"{stem}({n}){ext}"
+                else:
+                    new_name = base_name
+                self._pending.append((f, new_name, is_dup))
+
             self._put("done_query", None)
         except Exception as e:
             self._put("log", f"\n[ERROR] {e}\n")
@@ -359,12 +417,11 @@ class AVRenameApp:
             messagebox.showwarning("提示", "沒有勾選任何檔案")
             return
         self.btn_confirm.config(state="disabled")
-        self.btn_cancel.config(state="disabled")
         threading.Thread(target=self._do_rename, args=(to_rename,), daemon=True).start()
 
     def _cancel(self):
-        self._hide_review()
-        self.btn_confirm.pack_forget()
+        self._close_review()
+        self.btn_open_review.pack_forget()
         self.btn_cancel.pack_forget()
         self.btn_start.config(state="normal")
         self.lbl_progress.config(text="已取消")
@@ -422,15 +479,16 @@ class AVRenameApp:
                     self.lbl_progress.config(
                         text=f"查詢完成 — {n_ok} 筆可改名，{n_skip} 筆查無資料")
                     if n_ok > 0:
-                        self._show_review()
-                        self.btn_confirm.pack(side="left", padx=(0, 8), ipady=4)
+                        self.btn_open_review.config(
+                            text=f"📋  開啟審閱清單（{n_ok} 筆）")
+                        self.btn_open_review.pack(side="left", padx=(0, 8), ipady=4)
                     self.btn_cancel.pack(side="left", ipady=4)
                 elif msg_type == "done_rename":
                     success, fail, skipped = data
                     self.lbl_progress.config(
                         text=f"完成 — 成功 {success} / 失敗 {fail} / 跳過 {skipped}")
-                    self._hide_review()
-                    self.btn_confirm.pack_forget()
+                    self._close_review()
+                    self.btn_open_review.pack_forget()
                     self.btn_cancel.pack_forget()
                     self.btn_start.config(state="normal")
                 elif msg_type == "error":
