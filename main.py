@@ -360,8 +360,9 @@ class AVRenameApp:
                 self._put("done_query", None)
                 return
 
+            lookup_file = str(SCRIPT_DIR / cfg["lookup_file"])
             self._put("switch_progress", len(files))
-            fetcher = Fetcher(cache_file)
+            fetcher = Fetcher(cache_file, lookup_file)
             fetcher.start()
 
             # Phase 1: 查詢所有番號，收集 (Path, base_new_name)

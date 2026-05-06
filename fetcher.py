@@ -31,10 +31,24 @@ def _save_json(path: str, data: dict) -> None:
 
 
 class Fetcher:
-    def __init__(self, cache_file: str):
-        self.cache_file = cache_file
-        self.cache: dict = _load_json(cache_file)
+    def __init__(self, cache_file: str, lookup_file: str):
+        self.cache_file  = cache_file
+        self.lookup_file = lookup_file
+        self.cache: dict  = _load_json(cache_file)
         self.gender_cache: dict = self.cache.get("_actors", {})
+        self.lookup: dict = _load_json(lookup_file)
+
+        # 把 cache 裡已成功的條目補進 lookup（首次遷移用）
+        migrated = False
+        for code, entry in self.cache.items():
+            if code.startswith("_") or not isinstance(entry, dict):
+                continue
+            if not entry.get("no_data") and code not in self.lookup:
+                self.lookup[code] = {"title": entry["title"], "actresses": entry["actresses"]}
+                migrated = True
+        if migrated:
+            self._save_lookup()
+
         self._pw = None
         self._browser = None
         self._ctx = None
@@ -68,12 +82,20 @@ class Fetcher:
         data["_actors"] = self.gender_cache
         _save_json(self.cache_file, data)
 
+    def _save_lookup(self) -> None:
+        _save_json(self.lookup_file, self.lookup)
+
     def _new_page(self):
         page = self._ctx.new_page()
         Stealth().apply_stealth_sync(page)
         return page
 
     def query(self, code: str) -> dict | None:
+        # 1. lookup 永久對照表（最優先，不過期）
+        if code in self.lookup:
+            return self.lookup[code]
+
+        # 2. 操作層快取（含 no_data TTL）
         if code in self.cache:
             cached = self.cache[code]
             if isinstance(cached, dict) and cached.get("no_data"):
@@ -85,10 +107,14 @@ class Fetcher:
                     pass
             else:
                 return cached
+
+        # 3. 打 javdb
         result = self._query_javdb(code)
         time.sleep(random.uniform(1.0, 2.0))
         if result:
             self.cache[code] = result
+            self.lookup[code] = {"title": result["title"], "actresses": result["actresses"]}
+            self._save_lookup()
         else:
             self.cache[code] = {"no_data": True, "queried_at": datetime.now().isoformat()}
         self._save_cache()

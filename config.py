@@ -6,6 +6,7 @@ CONFIG_FILE = Path(__file__).parent / "config.json"
 DEFAULT_CONFIG = {
     "target_dir": "",
     "cache_file": "cache/javdb_cache.json",
+    "lookup_file": "data/javdb_lookup.json",
     "processed_log": "processed_log.json",
     "skipped_log": "skipped.json",
     "format_order": ["code", "actress", "title"],

@@ -101,7 +101,8 @@ def test_build_filename_with_part():
 
 # ─────────────────────────────────────────────────────────────
 
-CACHE_FILE = "cache/test_fetch_cache.json"
+CACHE_FILE  = "cache/test_fetch_cache.json"
+LOOKUP_FILE = "data/javdb_lookup.json"
 
 # 測試用番號清單
 # GTJ-065 → 已知含男優「佐川銀次」，測試性別過濾
@@ -118,7 +119,7 @@ SEP = "-" * 60
 
 
 def main():
-    fetcher = Fetcher(CACHE_FILE)
+    fetcher = Fetcher(CACHE_FILE, LOOKUP_FILE)
     fetcher.start()
 
     try:
