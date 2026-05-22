@@ -149,7 +149,7 @@ class LookupEnricher:
     def _fetch_listing_page(self, fetcher, page_num: int) -> list[tuple[str, str]]:
         page = fetcher._new_page()
         try:
-            url = f"https://javdb.com/videos?page={page_num}"
+            url = f"https://javdb.com/?page={page_num}"
             page.goto(url, wait_until="domcontentloaded", timeout=20000)
             try:
                 page.wait_for_selector(".video-title", timeout=8000)

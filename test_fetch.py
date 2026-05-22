@@ -81,7 +81,7 @@ def test_extract_digits_overflow_returns_none():
 
 def test_build_filename_default():
     assert build_filename("GTJ-065", ["宮崎あや"], "串刺し拷問", ".mp4") == \
-        "GTJ-065 宮崎あや - 串刺し拷問.mp4"
+        "GTJ-065 宮崎あや - 串刺し拷問 宮崎あや.mp4"
 
 def test_build_filename_actress_last():
     assert build_filename("GTJ-065", ["宮崎あや"], "串刺し拷問", ".mp4",
@@ -91,7 +91,7 @@ def test_build_filename_actress_last():
 def test_build_filename_actress_first():
     assert build_filename("GTJ-065", ["宮崎あや"], "串刺し拷問", ".mp4",
                           format_order=["actress", "code", "title"]) == \
-        "宮崎あや GTJ-065 - 串刺し拷問.mp4"
+        "宮崎あや GTJ-065 - 串刺し拷問 宮崎あや.mp4"
 
 def test_build_filename_title_first():
     assert build_filename("GTJ-065", ["宮崎あや"], "串刺し拷問", ".mp4",
@@ -101,7 +101,7 @@ def test_build_filename_title_first():
 def test_build_filename_with_part():
     assert build_filename("GTJ-065", ["宮崎あや"], "串刺し拷問", ".mp4",
                           part=1, format_order=["code", "actress", "title"]) == \
-        "GTJ-065 宮崎あや - 串刺し拷問(1).mp4"
+        "GTJ-065 宮崎あや - 串刺し拷問 宮崎あや(1).mp4"
 
 # ─────────────────────────────────────────────────────────────
 

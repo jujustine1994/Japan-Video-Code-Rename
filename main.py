@@ -511,7 +511,8 @@ class AVRenameApp:
 
 
 class DatabaseManagerDialog:
-    _STATE_PATH = SCRIPT_DIR / "data" / "enrich_state.json"
+    _STATE_PATH   = SCRIPT_DIR / "data" / "enrich_state.json"
+    _SESSION_FILE = SCRIPT_DIR / "data" / "javdb_session.txt"
 
     def __init__(self, parent: tk.Tk, cfg: dict):
         self._cfg     = cfg
@@ -526,7 +527,7 @@ class DatabaseManagerDialog:
         parent.update_idletasks()
         x = parent.winfo_x() + parent.winfo_width() + 10
         y = parent.winfo_y()
-        self.win.geometry(f"480x440+{x}+{y}")
+        self.win.geometry(f"480x530+{x}+{y}")
 
         self._build_ui()
         self._refresh_stats()
@@ -574,6 +575,19 @@ class DatabaseManagerDialog:
         ttk.Spinbox(row2, from_=10, to=5000, increment=100,
                     textvariable=self.pages_var, width=6).pack(side="left")
 
+        # Session Cookie
+        cookie_frame = ttk.LabelFrame(self.win, text=" JavDB Session Cookie ", padding=8)
+        cookie_frame.pack(fill="x", padx=14, pady=(0, 6))
+        self.lbl_session = ttk.Label(cookie_frame, text="")
+        self.lbl_session.pack(anchor="w")
+        cookie_row = tk.Frame(cookie_frame)
+        cookie_row.pack(fill="x", pady=(4, 0))
+        self.entry_cookie = ttk.Entry(cookie_row, font=("Consolas", 8))
+        self.entry_cookie.pack(side="left", fill="x", expand=True)
+        ttk.Button(cookie_row, text="儲存", width=6,
+                   command=self._save_cookie).pack(side="left", padx=(4, 0))
+        self._refresh_session_status()
+
         # Log
         log_frame = ttk.LabelFrame(self.win, text=" 進度 ", padding=8)
         log_frame.pack(fill="both", expand=True, padx=14, pady=(0, 6))
@@ -585,6 +599,27 @@ class DatabaseManagerDialog:
         # 關閉
         self.btn_close = ttk.Button(self.win, text="關閉", command=self.win.destroy, width=12)
         self.btn_close.pack(pady=(0, 10))
+
+    def _refresh_session_status(self):
+        if self._SESSION_FILE.exists():
+            val = self._SESSION_FILE.read_text(encoding="utf-8").strip()
+            status = f"已設定（{len(val)} 字元）" if val else "檔案存在但內容空白"
+        else:
+            status = "未設定"
+        self.lbl_session.config(text=f"狀態：{status}　← 貼上新 cookie 後點儲存")
+
+    def _save_cookie(self):
+        from urllib.parse import unquote
+        raw = self.entry_cookie.get().strip()
+        if not raw:
+            messagebox.showwarning("空白", "請先貼上 cookie 值")
+            return
+        decoded = unquote(raw)
+        self._SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        self._SESSION_FILE.write_text(decoded, encoding="utf-8")
+        self.entry_cookie.delete(0, "end")
+        self._refresh_session_status()
+        messagebox.showinfo("儲存成功", "Cookie 已儲存，下次爬取自動生效")
 
     def _refresh_stats(self):
         lookup_path = SCRIPT_DIR / self._cfg.get("lookup_file", "data/javdb_lookup.json")

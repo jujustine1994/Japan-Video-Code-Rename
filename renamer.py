@@ -35,7 +35,10 @@ def build_filename(code: str, actresses: list, title: str, ext: str,
         else:
             parts.append(val)
 
-    return sanitize(f"{' '.join(parts)}{part_str}{ext}")
+    base = " ".join(parts)
+    if format_order[-1] != "actress":
+        return sanitize(f"{base} {actress_str}{part_str}{ext}")
+    return sanitize(f"{base}{part_str}{ext}")
 
 
 def rename_file(src: Path, new_name: str) -> bool:

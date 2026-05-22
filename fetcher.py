@@ -65,10 +65,16 @@ class Fetcher:
             locale="ja-JP",
             viewport={"width": 1280, "height": 800},
         )
-        self._ctx.add_cookies([
+        cookies = [
             {"name": "over18", "value": "1", "domain": "javdb.com", "path": "/"},
             {"name": "locale",  "value": "ja",  "domain": "javdb.com", "path": "/"},
-        ])
+        ]
+        session_file = Path("data/javdb_session.txt")
+        if session_file.exists():
+            session_val = session_file.read_text(encoding="utf-8").strip()
+            if session_val:
+                cookies.append({"name": "_jdb_session", "value": session_val, "domain": "javdb.com", "path": "/"})
+        self._ctx.add_cookies(cookies)
 
     def stop(self) -> None:
         if self._browser:

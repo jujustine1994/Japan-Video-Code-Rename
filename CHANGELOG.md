@@ -21,6 +21,19 @@
 
 ## 更新記錄
 
+### 2026-05-22（feature/lookup-enrichment）— session 2
+
+**修正全量建置爬蟲無法翻頁**
+- 根本原因：JavDB 把 `/videos?page=X` 重導向至首頁 `/`，非登入狀態下所有頁碼回傳相同 40 筆，造成爬 315 頁只累積 85 筆
+- `enricher._fetch_listing_page` URL 修正：`/videos?page={n}` → `/?page={n}`
+- 確認登入後翻頁正常（Page 1 / 2 / 10 各不相同）
+
+**JavDB Session Cookie 支援**
+- `Fetcher.start()` 改為自動讀取 `data/javdb_session.txt`，若存在則注入 `_jdb_session` cookie
+- `data/javdb_session.txt` 加入 `.gitignore`（敏感資訊）
+- `DatabaseManagerDialog` 新增「JavDB Session Cookie」區塊：顯示目前設定狀態，可直接貼入 URL-encoded 或 decoded 的 cookie 值並儲存（`_save_cookie` 自動 URL decode）
+- Cookie 到期後只需重新貼入，追新 / 全量建置 / `bulk_enrich.py` 全部自動生效
+
 ### 2026-05-22（feature/lookup-enrichment）
 
 **資料庫管理對話框**
