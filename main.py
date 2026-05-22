@@ -552,8 +552,9 @@ class DatabaseManagerDialog:
         ttk.Button(row1, text="ℹ", width=3,
                    command=lambda: messagebox.showinfo(
                        "追新說明",
-                       "從最新番號開始掃描，遇到連續已知番號自動停止，"
-                       "同時補回之前查無資料的番號。\n\n適合每週執行一次。"
+                       "從最新番號開始掃描，遇到連續已知番號自動停止。\n"
+                       "同時補回之前查無資料的番號。\n\n"
+                       "沒有頁數上限，久未執行時可能需要較長時間。"
                    )).pack(side="left", padx=(4, 0))
 
         # 繼續建置
@@ -637,7 +638,7 @@ class DatabaseManagerDialog:
             fetcher.start()
             try:
                 new = enricher.scrape_new_releases(
-                    fetcher, stop_after_known=50, max_pages=20,
+                    fetcher, stop_after_known=50, max_pages=9999,
                     progress_cb=lambda msg: self.win.after(0, self._log, msg + "\n"),
                 )
                 recovered = enricher.retry_no_data(
