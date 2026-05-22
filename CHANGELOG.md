@@ -21,6 +21,23 @@
 
 ## 更新記錄
 
+### 2026-05-22（feature/lookup-enrichment）
+
+**資料庫管理對話框**
+- 主視窗資料庫區塊從「更新資料庫」+「批次建置」兩個按鈕合併為單一「資料庫管理...」入口
+- 新增 `DatabaseManagerDialog` Toplevel：追新 / 全量建置兩個獨立按鈕，各附 ℹ 說明
+- 執行中兩按鈕互鎖，關閉按鈕 disable 防止中途強關 Playwright
+- `enrich_state.json` 新增 `last_updated` 欄位，對話框顯示統計列
+
+**bulk_enrich 邏輯修正**
+- 全量建置改回 `scrape_listing_pages`（無 stop 條件，`last_page` resume）：page drift 只造成多幾個 request，不漏抓
+- 追新移除 `max_pages=20` 上限，改為 `max_pages=9999`，只靠連續已知條件停止，確保久未執行時（如 Day 125）仍能完整覆蓋所有新番
+- `retry_no_data` 加入 `max_retries=50` 上限，避免大量 no_data 造成 GUI 卡頓
+
+**命名規範修正**
+- `build_filename()` 修正：女優名在片名後再出現一次（符合命名規範 `[番號] [女優名] - [片名] [女優名].[副檔名]`）
+- 更新 `test_fetch.py` 對應測試，目前共 54 tests passed
+
 ### 2026-05-06
 - 修復 scanner.py regex：加 `(?!\d)` 防止超過 5 位數字被截斷（例如 `SONE-123456` 原本會錯誤抽出 `SONE-12345`）
 - 新增 19 個 `extract_code` 邊界案例單元測試（大小寫、括弧、無連字號、品質標籤、日期前綴、多集後綴、溢位等），總計 24 tests passed
