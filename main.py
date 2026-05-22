@@ -665,21 +665,23 @@ class DatabaseManagerDialog:
         def run():
             from fetcher import Fetcher
             from enricher import LookupEnricher
-            state = json.loads(self._STATE_PATH.read_text(encoding="utf-8")) \
-                    if self._STATE_PATH.exists() else {}
-            self.win.after(0, self._log, f"從第 1 頁開始，最多 {max_pages} 頁\n")
+            state      = json.loads(self._STATE_PATH.read_text(encoding="utf-8")) \
+                         if self._STATE_PATH.exists() else {}
+            start_page = state.get("last_page", 0) + 1
+            self.win.after(0, self._log, f"從第 {start_page} 頁開始，最多 {max_pages} 頁\n")
 
             fetcher  = Fetcher(cache_file, lookup_file)
             enricher = LookupEnricher(lookup_file, cache_file)
             fetcher.start()
             try:
-                new_count = enricher.scrape_new_releases(
-                    fetcher, stop_after_known=50, max_pages=max_pages,
+                new_count, last_page = enricher.scrape_listing_pages(
+                    fetcher, start_page=start_page, max_pages=max_pages,
                     progress_cb=lambda msg: self.win.after(0, self._log, msg + "\n"),
                 )
                 total = state.get("total_imported", 0) + new_count
-                self._save_state({"total_imported": total})
-                self.win.after(0, self._log, f"完成：本次 +{new_count} 筆，累計 {total} 筆\n")
+                self._save_state({"last_page": last_page, "total_imported": total})
+                self.win.after(0, self._log,
+                    f"完成：本次 +{new_count} 筆，累計 {total} 筆，停在第 {last_page} 頁\n")
             except Exception as e:
                 self.win.after(0, self._log, f"失敗：{e}\n")
             finally:
