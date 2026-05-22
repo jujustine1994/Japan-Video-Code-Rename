@@ -559,13 +559,14 @@ class DatabaseManagerDialog:
         # 繼續建置
         row2 = tk.Frame(action_frame)
         row2.pack(fill="x")
-        self.btn_build = ttk.Button(row2, text="繼續建置", command=self._run_build, width=14)
+        self.btn_build = ttk.Button(row2, text="全量建置", command=self._run_build, width=14)
         self.btn_build.pack(side="left")
         ttk.Button(row2, text="ℹ", width=3,
                    command=lambda: messagebox.showinfo(
-                       "繼續建置說明",
-                       "從上次停止的頁碼繼續爬取，用於初次建庫或大規模補充。"
-                       "\n每次執行指定頁數，可多次執行直到完成。"
+                       "全量建置說明",
+                       "從第 1 頁開始大量爬取，適合初次建庫或大規模補充。\n"
+                       "遇到連續已知番號會自動停止（表示已追上），\n"
+                       "可透過「最多頁數」設定每次執行上限。"
                    )).pack(side="left", padx=(4, 0))
         ttk.Label(row2, text="最多頁數:").pack(side="left", padx=(16, 4))
         self.pages_var = tk.StringVar(value="100")
@@ -664,28 +665,26 @@ class DatabaseManagerDialog:
         def run():
             from fetcher import Fetcher
             from enricher import LookupEnricher
-            state      = json.loads(self._STATE_PATH.read_text(encoding="utf-8")) \
-                         if self._STATE_PATH.exists() else {}
-            start_page = state.get("last_page", 0) + 1
-            self.win.after(0, self._log, f"從第 {start_page} 頁開始，最多 {max_pages} 頁\n")
+            state = json.loads(self._STATE_PATH.read_text(encoding="utf-8")) \
+                    if self._STATE_PATH.exists() else {}
+            self.win.after(0, self._log, f"從第 1 頁開始，最多 {max_pages} 頁\n")
 
             fetcher  = Fetcher(cache_file, lookup_file)
             enricher = LookupEnricher(lookup_file, cache_file)
             fetcher.start()
             try:
-                new_count, last_page = enricher.scrape_listing_pages(
-                    fetcher, start_page=start_page, max_pages=max_pages,
+                new_count = enricher.scrape_new_releases(
+                    fetcher, stop_after_known=50, max_pages=max_pages,
                     progress_cb=lambda msg: self.win.after(0, self._log, msg + "\n"),
                 )
                 total = state.get("total_imported", 0) + new_count
-                self._save_state({"last_page": last_page, "total_imported": total})
-                self.win.after(0, self._log,
-                    f"完成：本次 +{new_count} 筆，累計 {total} 筆，停在第 {last_page} 頁\n")
+                self._save_state({"total_imported": total})
+                self.win.after(0, self._log, f"完成：本次 +{new_count} 筆，累計 {total} 筆\n")
             except Exception as e:
                 self.win.after(0, self._log, f"失敗：{e}\n")
             finally:
                 fetcher.stop()
-                self.win.after(0, self._finish, self.btn_build, "繼續建置")
+                self.win.after(0, self._finish, self.btn_build, "全量建置")
 
         threading.Thread(target=run, daemon=True).start()
 
