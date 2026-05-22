@@ -565,9 +565,9 @@ class DatabaseManagerDialog:
         ttk.Button(row2, text="ℹ", width=3,
                    command=lambda: messagebox.showinfo(
                        "全量建置說明",
-                       "從第 1 頁開始大量爬取，適合初次建庫或大規模補充。\n"
-                       "遇到連續已知番號會自動停止（表示已追上），\n"
-                       "可透過「最多頁數」設定每次執行上限。"
+                       "從上次停止的頁碼繼續爬取，適合初次建庫或大規模補充。\n"
+                       "沒有連續已知判斷，會穿越已知區段繼續往後爬。\n"
+                       "可透過「最多頁數」設定每次執行上限，下次自動接續。"
                    )).pack(side="left", padx=(4, 0))
         ttk.Label(row2, text="最多頁數:").pack(side="left", padx=(16, 4))
         self.pages_var = tk.StringVar(value="100")
