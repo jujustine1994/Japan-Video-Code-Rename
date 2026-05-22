@@ -9,7 +9,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, filedialog
 from pathlib import Path
-
+from datetime import datetime
 from collections import Counter
 
 import config
@@ -113,10 +113,8 @@ class AVRenameApp:
         # 資料庫管理
         frame_db = ttk.LabelFrame(self.root, text=" 資料庫 ", padding=8)
         frame_db.grid(row=5, column=0, sticky="ew", padx=14, pady=(0, 8))
-        self.btn_update_db = ttk.Button(
-            frame_db, text="更新資料庫", command=self._update_db, width=18
-        )
-        self.btn_update_db.pack(anchor="w")
+        ttk.Button(frame_db, text="資料庫管理...",
+                   command=self._open_db_manager, width=18).pack(anchor="w")
 
         self.root.columnconfigure(0, weight=1)
 
@@ -460,45 +458,10 @@ class AVRenameApp:
                 json.dump(existing, f, ensure_ascii=False, indent=2)
         self._put("done_rename", (success, fail, len(self._skipped)))
 
+    def _open_db_manager(self):
+        DatabaseManagerDialog(self.root, self._cfg)
+
     # ── 執行緒安全 UI 更新 ────────────────────────────────────
-
-    def _update_db(self):
-        self.btn_update_db.config(state="disabled", text="更新中...")
-        self._put("log", "開始更新資料庫...\n")
-
-        cfg = self._cfg
-        stop_known  = cfg.get("update_stop_after_known", 50)
-        max_pages   = cfg.get("update_max_new_release_pages", 10)
-        lookup_file = cfg.get("lookup_file", "data/javdb_lookup.json")
-        cache_file  = cfg.get("cache_file", "cache/javdb_cache.json")
-
-        def run():
-            from fetcher import Fetcher
-            from enricher import LookupEnricher
-
-            fetcher  = Fetcher(cache_file, lookup_file)
-            enricher = LookupEnricher(lookup_file, cache_file)
-
-            fetcher.start()
-            try:
-                new = enricher.scrape_new_releases(
-                    fetcher,
-                    stop_after_known=stop_known,
-                    max_pages=max_pages,
-                    progress_cb=lambda msg: self.msg_queue.put(("log", msg + "\n")),
-                )
-                recovered = enricher.retry_no_data(
-                    fetcher,
-                    progress_cb=lambda msg: self.msg_queue.put(("log", msg + "\n")),
-                )
-                self.msg_queue.put(("log", f"更新完成：追新 +{new} 筆，補漏 +{recovered} 筆\n"))
-            except Exception as e:
-                self.msg_queue.put(("log", f"更新失敗：{e}\n"))
-            finally:
-                fetcher.stop()
-                self.msg_queue.put(("db_done", None))
-
-        threading.Thread(target=run, daemon=True).start()
 
     def _put(self, msg_type: str, data):
         self.msg_queue.put((msg_type, data))
@@ -538,8 +501,6 @@ class AVRenameApp:
                     self.btn_open_review.pack_forget()
                     self.btn_cancel.pack_forget()
                     self.btn_start.config(state="normal")
-                elif msg_type == "db_done":
-                    self.btn_update_db.config(state="normal", text="更新資料庫")
                 elif msg_type == "error":
                     self.progress_bar.stop()
                     self.lbl_progress.config(text="發生錯誤，請查看上方記錄")
@@ -547,6 +508,191 @@ class AVRenameApp:
         except queue.Empty:
             pass
         self.root.after(100, self._poll_queue)
+
+
+class DatabaseManagerDialog:
+    _STATE_PATH = SCRIPT_DIR / "data" / "enrich_state.json"
+
+    def __init__(self, parent: tk.Tk, cfg: dict):
+        self._cfg     = cfg
+        self._running = False
+
+        self.win = tk.Toplevel(parent)
+        self.win.title("資料庫管理")
+        self.win.resizable(False, False)
+        self.win.grab_set()
+
+        # 定位到主視窗旁
+        parent.update_idletasks()
+        x = parent.winfo_x() + parent.winfo_width() + 10
+        y = parent.winfo_y()
+        self.win.geometry(f"480x440+{x}+{y}")
+
+        self._build_ui()
+        self._refresh_stats()
+
+    def _build_ui(self):
+        pad = {"padx": 14, "pady": 6}
+
+        # 統計列
+        stats_frame = ttk.LabelFrame(self.win, text=" 資料庫狀態 ", padding=8)
+        stats_frame.pack(fill="x", **pad)
+        self.lbl_stats = ttk.Label(stats_frame, text="載入中...")
+        self.lbl_stats.pack(anchor="w")
+
+        # 操作區
+        action_frame = ttk.LabelFrame(self.win, text=" 操作 ", padding=8)
+        action_frame.pack(fill="x", padx=14, pady=(0, 6))
+
+        # 追新
+        row1 = tk.Frame(action_frame)
+        row1.pack(fill="x", pady=(0, 6))
+        self.btn_update = ttk.Button(row1, text="追新", command=self._run_update, width=14)
+        self.btn_update.pack(side="left")
+        ttk.Button(row1, text="ℹ", width=3,
+                   command=lambda: messagebox.showinfo(
+                       "追新說明",
+                       "從最新番號開始掃描，遇到連續已知番號自動停止，"
+                       "同時補回之前查無資料的番號。\n\n適合每週執行一次。"
+                   )).pack(side="left", padx=(4, 0))
+
+        # 繼續建置
+        row2 = tk.Frame(action_frame)
+        row2.pack(fill="x")
+        self.btn_build = ttk.Button(row2, text="繼續建置", command=self._run_build, width=14)
+        self.btn_build.pack(side="left")
+        ttk.Button(row2, text="ℹ", width=3,
+                   command=lambda: messagebox.showinfo(
+                       "繼續建置說明",
+                       "從上次停止的頁碼繼續爬取，用於初次建庫或大規模補充。"
+                       "\n每次執行指定頁數，可多次執行直到完成。"
+                   )).pack(side="left", padx=(4, 0))
+        ttk.Label(row2, text="最多頁數:").pack(side="left", padx=(16, 4))
+        self.pages_var = tk.StringVar(value="100")
+        ttk.Spinbox(row2, from_=10, to=5000, increment=100,
+                    textvariable=self.pages_var, width=6).pack(side="left")
+
+        # Log
+        log_frame = ttk.LabelFrame(self.win, text=" 進度 ", padding=8)
+        log_frame.pack(fill="both", expand=True, padx=14, pady=(0, 6))
+        self.log_text = scrolledtext.ScrolledText(
+            log_frame, width=56, height=10, state="disabled", font=("Consolas", 9)
+        )
+        self.log_text.pack(fill="both", expand=True)
+
+        # 關閉
+        self.btn_close = ttk.Button(self.win, text="關閉", command=self.win.destroy, width=12)
+        self.btn_close.pack(pady=(0, 10))
+
+    def _refresh_stats(self):
+        lookup_path = SCRIPT_DIR / self._cfg.get("lookup_file", "data/javdb_lookup.json")
+        count = 0
+        if lookup_path.exists():
+            data = json.loads(lookup_path.read_text(encoding="utf-8"))
+            count = len(data)
+
+        last_updated = "尚未建置"
+        if self._STATE_PATH.exists():
+            state = json.loads(self._STATE_PATH.read_text(encoding="utf-8"))
+            last_updated = state.get("last_updated", "未知")
+
+        self.lbl_stats.config(text=f"共 {count:,} 筆 · 上次更新：{last_updated}")
+
+    def _log(self, msg: str):
+        self.log_text.config(state="normal")
+        self.log_text.insert("end", msg)
+        self.log_text.see("end")
+        self.log_text.config(state="disabled")
+
+    def _set_running(self, running: bool):
+        self._running = running
+        state = "disabled" if running else "normal"
+        self.btn_update.config(state=state)
+        self.btn_build.config(state=state)
+        self.btn_close.config(state=state)
+
+    def _save_state(self, updates: dict):
+        state = {}
+        if self._STATE_PATH.exists():
+            state = json.loads(self._STATE_PATH.read_text(encoding="utf-8"))
+        state.update(updates)
+        state["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        self._STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self._STATE_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _run_update(self):
+        self._set_running(True)
+        self.btn_update.config(text="追新中...")
+        self.win.after(0, self._log, "開始追新...\n")
+
+        lookup_file = str(SCRIPT_DIR / self._cfg.get("lookup_file", "data/javdb_lookup.json"))
+        cache_file  = str(SCRIPT_DIR / self._cfg.get("cache_file",  "cache/javdb_cache.json"))
+
+        def run():
+            from fetcher import Fetcher
+            from enricher import LookupEnricher
+            fetcher  = Fetcher(cache_file, lookup_file)
+            enricher = LookupEnricher(lookup_file, cache_file)
+            fetcher.start()
+            try:
+                new = enricher.scrape_new_releases(
+                    fetcher, stop_after_known=50, max_pages=20,
+                    progress_cb=lambda msg: self.win.after(0, self._log, msg + "\n"),
+                )
+                recovered = enricher.retry_no_data(
+                    fetcher, max_retries=50,
+                    progress_cb=lambda msg: self.win.after(0, self._log, msg + "\n"),
+                )
+                self._save_state({})
+                self.win.after(0, self._log, f"完成：追新 +{new} 筆，補回 +{recovered} 筆\n")
+            except Exception as e:
+                self.win.after(0, self._log, f"失敗：{e}\n")
+            finally:
+                fetcher.stop()
+                self.win.after(0, self._finish, self.btn_update, "追新")
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _run_build(self):
+        self._set_running(True)
+        self.btn_build.config(text="建置中...")
+        max_pages = int(self.pages_var.get() or 100)
+
+        lookup_file = str(SCRIPT_DIR / self._cfg.get("lookup_file", "data/javdb_lookup.json"))
+        cache_file  = str(SCRIPT_DIR / self._cfg.get("cache_file",  "cache/javdb_cache.json"))
+
+        def run():
+            from fetcher import Fetcher
+            from enricher import LookupEnricher
+            state      = json.loads(self._STATE_PATH.read_text(encoding="utf-8")) \
+                         if self._STATE_PATH.exists() else {}
+            start_page = state.get("last_page", 0) + 1
+            self.win.after(0, self._log, f"從第 {start_page} 頁開始，最多 {max_pages} 頁\n")
+
+            fetcher  = Fetcher(cache_file, lookup_file)
+            enricher = LookupEnricher(lookup_file, cache_file)
+            fetcher.start()
+            try:
+                new_count, last_page = enricher.scrape_listing_pages(
+                    fetcher, start_page=start_page, max_pages=max_pages,
+                    progress_cb=lambda msg: self.win.after(0, self._log, msg + "\n"),
+                )
+                total = state.get("total_imported", 0) + new_count
+                self._save_state({"last_page": last_page, "total_imported": total})
+                self.win.after(0, self._log,
+                    f"完成：本次 +{new_count} 筆，累計 {total} 筆，停在第 {last_page} 頁\n")
+            except Exception as e:
+                self.win.after(0, self._log, f"失敗：{e}\n")
+            finally:
+                fetcher.stop()
+                self.win.after(0, self._finish, self.btn_build, "繼續建置")
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _finish(self, btn: ttk.Button, label: str):
+        btn.config(text=label)
+        self._set_running(False)
+        self._refresh_stats()
 
 
 def main():

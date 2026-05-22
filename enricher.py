@@ -82,7 +82,7 @@ class LookupEnricher:
 
         return new_entries
 
-    def retry_no_data(self, fetcher, progress_cb=None) -> int:
+    def retry_no_data(self, fetcher, max_retries: int = 50, progress_cb=None) -> int:
         to_retry = []
         for code, entry in self.cache.items():
             if code.startswith("_") or not isinstance(entry, dict):
@@ -97,7 +97,7 @@ class LookupEnricher:
                 to_retry.append(code)
 
         recovered = 0
-        for code in to_retry:
+        for code in to_retry[:max_retries]:
             result = fetcher._query_javdb(code)
             if result:
                 self.lookup[code] = {"title": result["title"], "actresses": result["actresses"]}
