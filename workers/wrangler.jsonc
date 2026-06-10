@@ -4,5 +4,15 @@
   "compatibility_date": "2026-06-10",
   "vars": {
     "GITHUB_REPO": "jujustine1994/Japan-Video-Code-Rename"
-  }
+  },
+  "ratelimits": [
+    {
+      "name": "RATE_LIMITER",
+      "namespace_id": "1",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    }
+  ]
 }

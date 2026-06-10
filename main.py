@@ -104,6 +104,8 @@ class AVRenameApp:
         frame_db.grid(row=4, column=0, sticky="ew", padx=14, pady=(0, 8))
         ttk.Button(frame_db, text="資料庫管理...",
                    command=self._open_db_manager, width=18).pack(anchor="w")
+        ttk.Label(frame_db, text="⚠ 社群資料庫收錄番號與片名，女優名需首次查詢時自動補入",
+                  foreground="#888888", font=("", 8)).pack(anchor="w", pady=(4, 0))
 
         self.root.columnconfigure(0, weight=1)
 

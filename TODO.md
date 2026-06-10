@@ -9,7 +9,7 @@
 - [x] **社群資料庫安全性審查**（完成 2026-06-10）
   - [x] **Worker 層**：番號格式 `^[A-Z]+-\d+$`、entries 1–1000、title ≤200 字元（workers/index.js）
   - [x] **GitHub Action 層**：body ≤100KB、entries 1–1000、title ≤200，validate_payload / filter_entries 函數化（.github/scripts/process_contribution.py）
-  - [ ] **Rate limit**：Cloudflare 免費方案 1 條 rule，尚未設定（Dashboard → Workers → av-community-db → Rate Limiting）
+  - [x] **Rate limit**：Workers RateLimit binding，10 req/60s per IP（workers/index.js + wrangler.jsonc），免費，不佔 WAF rule 配額
   - [x] **Issue body 大小**：100KB 上限保護已加入
   - [x] **資料汙染回復**：git history 為備份；`wrangler rollback` 可快速回退 Worker
 
@@ -29,21 +29,27 @@
 ```
 
 ### Task: 批次建置基礎資料庫（方案A）
-- [ ] 你自己跑 `python scripts/bulk_enrich.py --max-pages 1000`（預計幾小時），產出含 ~28,000 筆的基礎 `data/javdb_lookup.json`
-- [ ] 確認 `data/javdb_lookup.json` 條目格式正確（title 有值，actresses 為 `[]`，partial 為 `true`）
-- [ ] 把這份 lookup.json 打包進 GitHub Release（讓用戶下載時就有基礎庫）
+> ⛔ **暫緩**：javdb 需要有效的登入 session cookie，且全量爬蟲需數小時人工監控。
+> 目前 session 已過期，需重新登入取得新 `_jdb_session` 後才能繼續。
+> 恢復條件：重新登入 javdb → 貼上新 cookie → 從 DatabaseManagerDialog 跑全量建置。
+
+- [ ] 取得有效 javdb session cookie
+- [ ] 跑全量建置（DatabaseManagerDialog → 全量建置，從第 1 頁開始）
+- [ ] 確認 `data/javdb_lookup.json` 條目格式正確
+- [ ] 把 lookup.json 打包進 GitHub Release
 
 ### Task: GUI 提示文字
-- [ ] 在「資料庫」區塊加一行說明 label：`⚠ 資料庫收錄番號與片名，女優名需首次查詢時自動補入`
+- [x] 在「資料庫」區塊加一行說明 label（完成 2026-06-10）
 
-### Task: 社群協作（GitHub PR 流程）
-- [ ] 設計 contribution.json 格式（只含新增條目，不含已有條目）
-- [ ] GUI 加「貢獻資料」按鈕 → 產生 contribution.json
-- [ ] 撰寫 GitHub Actions 驗證腳本：
-  - schema 檢查（每條必須有 title string，actresses array）
-  - 番號格式 regex 驗證
-  - append-only 檢查（PR 不能修改或刪除已有條目）
-- [ ] 決定 contribution 流程（fork + PR，還是 issue 上傳）
+### Task: 社群協作
+> ✅ **已以 GitHub Issues 流程取代 PR 流程**（完成 2026-06-10）
+> App → Cloudflare Worker → GitHub Issue → GitHub Action → javdb_community.json
+> 驗證、合併、push 全自動。無需用戶 fork 或 PR。
+
+- [x] 設計貢獻格式（JSON payload，含 source/version/entries）
+- [x] GUI 加「貢獻我的資料」按鈕（DatabaseManagerDialog 社群同步區塊）
+- [x] GitHub Action 驗證（番號格式、append-only、格式 schema）
+- [x] 決定流程：Issue 上傳（已實作）
 
 ### 說明：按鈕對應功能
 | 按鈕 | 功能 |
