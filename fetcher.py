@@ -91,6 +91,20 @@ class Fetcher:
     def _save_lookup(self) -> None:
         _save_json(self.lookup_file, self.lookup)
 
+    def check_login_status(self) -> tuple[bool, str]:
+        page = self._new_page()
+        try:
+            page.goto(JAVDB_BASE, wait_until="domcontentloaded", timeout=20000)
+            if page.query_selector('a[href*="sign_in"]'):
+                return False, "未登入（session 已失效或未設定）"
+            if page.query_selector('.current-user, .user-name, a[href*="/users/"]'):
+                return True, "已登入"
+            return False, "無法判斷登入狀態（找不到特徵元素）"
+        except Exception as e:
+            return False, f"登入狀態檢查失敗：{e}"
+        finally:
+            page.close()
+
     def _new_page(self):
         page = self._ctx.new_page()
         Stealth().apply_stealth_sync(page)

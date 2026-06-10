@@ -515,8 +515,10 @@ class DatabaseManagerDialog:
     _SESSION_FILE = SCRIPT_DIR / "data" / "javdb_session.txt"
 
     def __init__(self, parent: tk.Tk, cfg: dict):
-        self._cfg     = cfg
-        self._running = False
+        self._cfg         = cfg
+        self._running     = False
+        self._pause_event = threading.Event()
+        self._abort_event = threading.Event()
 
         self.win = tk.Toplevel(parent)
         self.win.title("資料庫管理")
@@ -527,7 +529,7 @@ class DatabaseManagerDialog:
         parent.update_idletasks()
         x = parent.winfo_x() + parent.winfo_width() + 10
         y = parent.winfo_y()
-        self.win.geometry(f"480x530+{x}+{y}")
+        self.win.geometry(f"480x640+{x}+{y}")
 
         self._build_ui()
         self._refresh_stats()
@@ -538,8 +540,17 @@ class DatabaseManagerDialog:
         # 統計列
         stats_frame = ttk.LabelFrame(self.win, text=" 資料庫狀態 ", padding=8)
         stats_frame.pack(fill="x", **pad)
-        self.lbl_stats = ttk.Label(stats_frame, text="載入中...")
-        self.lbl_stats.pack(anchor="w")
+        self.lbl_count = ttk.Label(stats_frame, text="載入中...")
+        self.lbl_count.pack(anchor="w")
+        lp_row = tk.Frame(stats_frame)
+        lp_row.pack(anchor="w", pady=(4, 0))
+        ttk.Label(lp_row, text="上次停在第").pack(side="left")
+        self.last_page_var = tk.StringVar(value="0")
+        ttk.Spinbox(lp_row, from_=0, to=99999, increment=1,
+                    textvariable=self.last_page_var, width=7).pack(side="left", padx=(4, 4))
+        ttk.Label(lp_row, text="頁（可手動修改）").pack(side="left")
+        ttk.Button(lp_row, text="儲存", width=6,
+                   command=self._save_last_page).pack(side="left", padx=(8, 0))
 
         # 操作區
         action_frame = ttk.LabelFrame(self.win, text=" 操作 ", padding=8)
@@ -558,34 +569,49 @@ class DatabaseManagerDialog:
                        "沒有頁數上限，久未執行時可能需要較長時間。"
                    )).pack(side="left", padx=(4, 0))
 
-        # 繼續建置
+        # 全量建置
         row2 = tk.Frame(action_frame)
-        row2.pack(fill="x")
+        row2.pack(fill="x", pady=(0, 4))
         self.btn_build = ttk.Button(row2, text="全量建置", command=self._run_build, width=14)
         self.btn_build.pack(side="left")
         ttk.Button(row2, text="ℹ", width=3,
                    command=lambda: messagebox.showinfo(
                        "全量建置說明",
-                       "從上次停止的頁碼繼續爬取，適合初次建庫或大規模補充。\n"
-                       "沒有連續已知判斷，會穿越已知區段繼續往後爬。\n"
-                       "可透過「最多頁數」設定每次執行上限，下次自動接續。"
+                       "從指定頁碼爬取，適合初次建庫或補充特定區間。\n"
+                       "連續 2 頁無新增時自動暫停（可能是 session 失效）。\n"
+                       "下次執行會從上次停止頁碼接續。"
                    )).pack(side="left", padx=(4, 0))
-        ttk.Label(row2, text="最多頁數:").pack(side="left", padx=(16, 4))
+
+        # 頁碼設定（全量建置用）
+        row3 = tk.Frame(action_frame)
+        row3.pack(fill="x", pady=(0, 6))
+        ttk.Label(row3, text="從第").pack(side="left")
+        self.start_page_var = tk.StringVar(value="1")
+        ttk.Spinbox(row3, from_=1, to=99999, increment=1,
+                    textvariable=self.start_page_var, width=7).pack(side="left", padx=(4, 8))
+        ttk.Label(row3, text="頁，爬").pack(side="left")
         self.pages_var = tk.StringVar(value="100")
-        ttk.Spinbox(row2, from_=10, to=5000, increment=100,
-                    textvariable=self.pages_var, width=6).pack(side="left")
+        ttk.Spinbox(row3, from_=10, to=5000, increment=100,
+                    textvariable=self.pages_var, width=6).pack(side="left", padx=(4, 4))
+        ttk.Label(row3, text="頁").pack(side="left")
+
+        # 暫停 / 中止按鈕
+        row4 = tk.Frame(action_frame)
+        row4.pack(fill="x")
+        self.btn_pause = ttk.Button(row4, text="⏸ 暫停", command=self._on_pause,
+                                    width=14, state="disabled")
+        self.btn_pause.pack(side="left", padx=(0, 6))
+        self.btn_abort = ttk.Button(row4, text="✖ 中止", command=self._on_abort,
+                                    width=14, state="disabled")
+        self.btn_abort.pack(side="left")
 
         # Session Cookie
         cookie_frame = ttk.LabelFrame(self.win, text=" JavDB Session Cookie ", padding=8)
         cookie_frame.pack(fill="x", padx=14, pady=(0, 6))
         self.lbl_session = ttk.Label(cookie_frame, text="")
         self.lbl_session.pack(anchor="w")
-        cookie_row = tk.Frame(cookie_frame)
-        cookie_row.pack(fill="x", pady=(4, 0))
-        self.entry_cookie = ttk.Entry(cookie_row, font=("Consolas", 8))
-        self.entry_cookie.pack(side="left", fill="x", expand=True)
-        ttk.Button(cookie_row, text="儲存", width=6,
-                   command=self._save_cookie).pack(side="left", padx=(4, 0))
+        ttk.Button(cookie_frame, text="設定 Cookie...", command=self._open_cookie_dialog,
+                   width=18).pack(anchor="w", pady=(4, 0))
         self._refresh_session_status()
 
         # Log
@@ -608,18 +634,53 @@ class DatabaseManagerDialog:
             status = "未設定"
         self.lbl_session.config(text=f"狀態：{status}　← 貼上新 cookie 後點儲存")
 
-    def _save_cookie(self):
+    def _open_cookie_dialog(self):
         from urllib.parse import unquote
-        raw = self.entry_cookie.get().strip()
-        if not raw:
-            messagebox.showwarning("空白", "請先貼上 cookie 值")
-            return
-        decoded = unquote(raw)
-        self._SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-        self._SESSION_FILE.write_text(decoded, encoding="utf-8")
-        self.entry_cookie.delete(0, "end")
-        self._refresh_session_status()
-        messagebox.showinfo("儲存成功", "Cookie 已儲存，下次爬取自動生效")
+        dialog = tk.Toplevel(self.win)
+        dialog.title("設定 JavDB Session Cookie")
+        dialog.resizable(True, False)
+        dialog.grab_set()
+        self.win.update_idletasks()
+        dialog.geometry(f"560x340+{self.win.winfo_x() + 20}+{self.win.winfo_y() + 20}")
+
+        ttk.Label(dialog, text="目前儲存的 Cookie（唯讀）：").pack(
+            anchor="w", padx=12, pady=(10, 2))
+        cur_frame = tk.Frame(dialog, padx=12)
+        cur_frame.pack(fill="x")
+        cur_text = tk.Text(cur_frame, height=3, font=("Consolas", 8),
+                           wrap="char", state="disabled", bg="#f0f0f0")
+        cur_text.pack(fill="x")
+        cur_val = (self._SESSION_FILE.read_text(encoding="utf-8").strip()
+                   if self._SESSION_FILE.exists() else "（尚未設定）")
+        cur_text.config(state="normal")
+        cur_text.insert("1.0", cur_val)
+        cur_text.config(state="disabled")
+
+        ttk.Label(dialog, text="貼上新的 Cookie 值：").pack(
+            anchor="w", padx=12, pady=(10, 2))
+        new_frame = tk.Frame(dialog, padx=12)
+        new_frame.pack(fill="x")
+        new_text = tk.Text(new_frame, height=3, font=("Consolas", 8), wrap="char")
+        new_text.pack(fill="x")
+        new_text.focus_set()
+
+        def do_save():
+            raw = new_text.get("1.0", "end").strip()
+            if not raw:
+                messagebox.showwarning("空白", "請先貼上 cookie 值", parent=dialog)
+                return
+            decoded = unquote(raw)
+            self._SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+            self._SESSION_FILE.write_text(decoded, encoding="utf-8")
+            self._refresh_session_status()
+            dialog.destroy()
+
+        btn_row = tk.Frame(dialog)
+        btn_row.pack(pady=10)
+        ttk.Button(btn_row, text="儲存", width=10, command=do_save).pack(
+            side="left", padx=(0, 8))
+        ttk.Button(btn_row, text="取消", width=10,
+                   command=dialog.destroy).pack(side="left")
 
     def _refresh_stats(self):
         lookup_path = SCRIPT_DIR / self._cfg.get("lookup_file", "data/javdb_lookup.json")
@@ -628,12 +689,30 @@ class DatabaseManagerDialog:
             data = json.loads(lookup_path.read_text(encoding="utf-8"))
             count = len(data)
 
+        lp = 0
         last_updated = "尚未建置"
         if self._STATE_PATH.exists():
             state = json.loads(self._STATE_PATH.read_text(encoding="utf-8"))
+            lp = state.get("last_page") or 0
             last_updated = state.get("last_updated", "未知")
 
-        self.lbl_stats.config(text=f"共 {count:,} 筆 · 上次更新：{last_updated}")
+        self.lbl_count.config(text=f"共 {count:,} 筆 · 上次更新：{last_updated}")
+        self.last_page_var.set(str(lp))
+        self.start_page_var.set(str(lp + 1))
+
+    def _save_last_page(self):
+        try:
+            lp = int(self.last_page_var.get())
+        except ValueError:
+            messagebox.showerror("錯誤", "頁碼必須為整數")
+            return
+        state = {}
+        if self._STATE_PATH.exists():
+            state = json.loads(self._STATE_PATH.read_text(encoding="utf-8"))
+        state["last_page"] = lp
+        self._STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self._STATE_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.start_page_var.set(str(lp + 1))
 
     def _log(self, msg: str):
         self.log_text.config(state="normal")
@@ -647,6 +726,19 @@ class DatabaseManagerDialog:
         self.btn_update.config(state=state)
         self.btn_build.config(state=state)
         self.btn_close.config(state=state)
+        self.btn_pause.config(state="normal" if running else "disabled", text="⏸ 暫停")
+        self.btn_abort.config(state="normal" if running else "disabled", text="✖ 中止")
+
+    def _on_pause(self):
+        self._pause_event.set()
+        self.btn_pause.config(state="disabled", text="⏸ 暫停中...")
+        self.btn_abort.config(state="disabled")
+
+    def _on_abort(self):
+        self._abort_event.set()
+        self._pause_event.set()
+        self.btn_pause.config(state="disabled")
+        self.btn_abort.config(state="disabled", text="✖ 中止中...")
 
     def _save_state(self, updates: dict):
         state = {}
@@ -659,6 +751,8 @@ class DatabaseManagerDialog:
 
     def _run_update(self):
         self._set_running(True)
+        self._pause_event.clear()
+        self._abort_event.clear()
         self.btn_update.config(text="追新中...")
         self.win.after(0, self._log, "開始追新...\n")
 
@@ -671,17 +765,25 @@ class DatabaseManagerDialog:
             fetcher  = Fetcher(cache_file, lookup_file)
             enricher = LookupEnricher(lookup_file, cache_file)
             fetcher.start()
+            logged_in, login_msg = fetcher.check_login_status()
+            self.win.after(0, self._log, f"{'✅' if logged_in else '❌'} {login_msg}\n")
             try:
                 new = enricher.scrape_new_releases(
                     fetcher, stop_after_known=50, max_pages=9999,
                     progress_cb=lambda msg: self.win.after(0, self._log, msg + "\n"),
+                    pause_event=self._pause_event,
                 )
-                recovered = enricher.retry_no_data(
-                    fetcher, max_retries=50,
-                    progress_cb=lambda msg: self.win.after(0, self._log, msg + "\n"),
-                )
-                self._save_state({})
-                self.win.after(0, self._log, f"完成：追新 +{new} 筆，補回 +{recovered} 筆\n")
+                if self._abort_event.is_set():
+                    self.win.after(0, self._log, f"✖ 已中止：追新 +{new} 筆\n")
+                elif not self._pause_event.is_set():
+                    recovered = enricher.retry_no_data(
+                        fetcher, max_retries=50,
+                        progress_cb=lambda msg: self.win.after(0, self._log, msg + "\n"),
+                    )
+                    self._save_state({})
+                    self.win.after(0, self._log, f"完成：追新 +{new} 筆，補回 +{recovered} 筆\n")
+                else:
+                    self.win.after(0, self._log, f"⏸ 已暫停：追新 +{new} 筆\n")
             except Exception as e:
                 self.win.after(0, self._log, f"失敗：{e}\n")
             finally:
@@ -692,8 +794,11 @@ class DatabaseManagerDialog:
 
     def _run_build(self):
         self._set_running(True)
+        self._pause_event.clear()
+        self._abort_event.clear()
         self.btn_build.config(text="建置中...")
-        max_pages = int(self.pages_var.get() or 100)
+        max_pages  = int(self.pages_var.get() or 100)
+        start_page = int(self.start_page_var.get() or 1)
 
         lookup_file = str(SCRIPT_DIR / self._cfg.get("lookup_file", "data/javdb_lookup.json"))
         cache_file  = str(SCRIPT_DIR / self._cfg.get("cache_file",  "cache/javdb_cache.json"))
@@ -701,23 +806,45 @@ class DatabaseManagerDialog:
         def run():
             from fetcher import Fetcher
             from enricher import LookupEnricher
-            state      = json.loads(self._STATE_PATH.read_text(encoding="utf-8")) \
-                         if self._STATE_PATH.exists() else {}
-            start_page = state.get("last_page", 0) + 1
+            state = json.loads(self._STATE_PATH.read_text(encoding="utf-8")) \
+                    if self._STATE_PATH.exists() else {}
+            prev_last = state.get("last_page", 0)
             self.win.after(0, self._log, f"從第 {start_page} 頁開始，最多 {max_pages} 頁\n")
 
             fetcher  = Fetcher(cache_file, lookup_file)
             enricher = LookupEnricher(lookup_file, cache_file)
             fetcher.start()
+            logged_in, login_msg = fetcher.check_login_status()
+            self.win.after(0, self._log, f"{'✅' if logged_in else '❌'} {login_msg}\n")
             try:
                 new_count, last_page = enricher.scrape_listing_pages(
                     fetcher, start_page=start_page, max_pages=max_pages,
                     progress_cb=lambda msg: self.win.after(0, self._log, msg + "\n"),
+                    pause_event=self._pause_event,
+                    prev_last_page=prev_last,
                 )
-                total = state.get("total_imported", 0) + new_count
-                self._save_state({"last_page": last_page, "total_imported": total})
-                self.win.after(0, self._log,
-                    f"完成：本次 +{new_count} 筆，累計 {total} 筆，停在第 {last_page} 頁\n")
+                if self._abort_event.is_set():
+                    self.win.after(0, lambda: self.start_page_var.set(str(start_page)))
+                    self.win.after(0, self._log,
+                        f"✖ 已中止：本次 +{new_count} 筆，進度未儲存，"
+                        f"下次仍從第 {start_page} 頁開始\n")
+                elif new_count > 0:
+                    total = state.get("total_imported", 0) + new_count
+                    self._save_state({"last_page": last_page, "total_imported": total})
+                    self.win.after(0, lambda: self.start_page_var.set(str(last_page + 1)))
+                    if self._pause_event.is_set():
+                        self.win.after(0, self._log,
+                            f"⏸ 已暫停：本次 +{new_count} 筆，停在第 {last_page} 頁\n"
+                            f"（再按「全量建置」從第 {last_page + 1} 頁繼續）\n")
+                    else:
+                        total = state.get("total_imported", 0) + new_count
+                        self.win.after(0, self._log,
+                            f"完成：本次 +{new_count} 筆，累計 {total} 筆，停在第 {last_page} 頁\n")
+                elif start_page > prev_last:
+                    self.win.after(0, self._log,
+                        "⚠ 在未爬過的範圍卻無新增，可能是 session 失效。last_page 未更新。\n")
+                else:
+                    self.win.after(0, self._log, "完成：本次 +0 筆（頁碼範圍為已知內容）\n")
             except Exception as e:
                 self.win.after(0, self._log, f"失敗：{e}\n")
             finally:
