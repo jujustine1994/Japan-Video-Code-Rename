@@ -1,0 +1,8 @@
+{
+  "name": "av-community-db",
+  "main": "index.js",
+  "compatibility_date": "2026-06-10",
+  "vars": {
+    "GITHUB_REPO": "jujustine1994/Japan-Video-Code-Rename"
+  }
+}
