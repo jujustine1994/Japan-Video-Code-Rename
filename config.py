@@ -10,6 +10,8 @@ DEFAULT_CONFIG = {
     "processed_log": "processed_log.json",
     "skipped_log": "skipped.json",
     "format_order": ["code", "actress", "title"],
+    "update_stop_after_known": 50,
+    "update_max_new_release_pages": 10,
 }
 
 

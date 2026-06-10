@@ -65,10 +65,16 @@ class Fetcher:
             locale="ja-JP",
             viewport={"width": 1280, "height": 800},
         )
-        self._ctx.add_cookies([
+        cookies = [
             {"name": "over18", "value": "1", "domain": "javdb.com", "path": "/"},
             {"name": "locale",  "value": "ja",  "domain": "javdb.com", "path": "/"},
-        ])
+        ]
+        session_file = Path("data/javdb_session.txt")
+        if session_file.exists():
+            session_val = session_file.read_text(encoding="utf-8").strip()
+            if session_val:
+                cookies.append({"name": "_jdb_session", "value": session_val, "domain": "javdb.com", "path": "/"})
+        self._ctx.add_cookies(cookies)
 
     def stop(self) -> None:
         if self._browser:
@@ -85,6 +91,20 @@ class Fetcher:
     def _save_lookup(self) -> None:
         _save_json(self.lookup_file, self.lookup)
 
+    def check_login_status(self) -> tuple[bool, str]:
+        page = self._new_page()
+        try:
+            page.goto(JAVDB_BASE, wait_until="domcontentloaded", timeout=20000)
+            if page.query_selector('a[href*="sign_in"]'):
+                return False, "未登入（session 已失效或未設定）"
+            if page.query_selector('.current-user, .user-name, a[href*="/users/"]'):
+                return True, "已登入"
+            return False, "無法判斷登入狀態（找不到特徵元素）"
+        except Exception as e:
+            return False, f"登入狀態檢查失敗：{e}"
+        finally:
+            page.close()
+
     def _new_page(self):
         page = self._ctx.new_page()
         Stealth().apply_stealth_sync(page)
@@ -93,6 +113,19 @@ class Fetcher:
     def query(self, code: str) -> dict | None:
         # 1. lookup 永久對照表（最優先，不過期）
         if code in self.lookup:
+            entry = self.lookup[code]
+            if entry.get("partial"):
+                result = self._query_javdb(code)
+                if result:
+                    self.lookup[code] = {"title": result["title"], "actresses": result["actresses"]}
+                    self._save_lookup()
+                    self.cache[code] = result
+                    self._save_cache()
+                    return self.lookup[code]
+                else:
+                    # 確認找不到：移除 partial 旗標避免重複嘗試
+                    self.lookup[code] = {"title": entry["title"], "actresses": []}
+                    self._save_lookup()
             return self.lookup[code]
 
         # 2. 操作層快取（含 no_data TTL）

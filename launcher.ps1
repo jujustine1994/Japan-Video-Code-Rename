@@ -5,6 +5,21 @@ $host.UI.RawUI.WindowTitle = "超級老司機整理器"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
+# 攔截所有未預期例外，防止視窗直接閃退
+trap {
+    Write-Host ""
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Red
+    Write-Host "[CRASH] 意外錯誤，程式無法繼續執行" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  錯誤訊息：$($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "  發生位置：$($_.InvocationInfo.ScriptLineNumber) 行" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  請截圖此畫面並回報給開發者。" -ForegroundColor White
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Red
+    Read-Host "按 Enter 關閉"
+    exit 1
+}
+
 Clear-Host
 Write-Host "[INFO] Starting AV Code Rename..." -ForegroundColor Green
 Write-Host ""
@@ -19,7 +34,7 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     if ($ans -eq "" -or $ans -ieq "Y") {
         if (Get-Command winget -ErrorAction SilentlyContinue) {
             Write-Host "[INFO] 透過 winget 安裝 Python，請稍候..." -ForegroundColor Gray
-            winget install --id Python.Python.3 -e --silent --accept-source-agreements --accept-package-agreements
+            winget install --id Python.Python.3 -e --silent --accept-source-agreements --accept-package-agreements --override "/quiet PrependPath=1 Include_pip=1"
         } else {
             Write-Host "[ERROR] 找不到 winget，請手動至 https://www.python.org/ 安裝後重新執行。" -ForegroundColor Red
             Read-Host "按 Enter 關閉"; exit 1

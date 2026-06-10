@@ -21,6 +21,92 @@
 
 ## 更新記錄
 
+### 2026-06-10
+- 修正：`winget install Python` 加入 `--override "/quiet PrependPath=1 Include_pip=1"`，確保靜默安裝後 Python 自動加進 PATH
+- 修正：`launcher.ps1` 加入全域 `trap`，攔截未處理例外，防止執行失敗時視窗直接閃退
+
+### 2026-05-24（feature/lookup-enrichment）— session 3
+
+**全量建置除錯強化**
+- `enricher._fetch_listing_page`：失敗時改為記錄實際 URL 與頁面標題（原本靜默回傳 `[]`，無法分辨是 session 失效還是網路問題）
+
+**全量建置自動暫停**
+- `scrape_listing_pages` 新增 `pause_event` 參數與連續零新增偵測
+- 條件（`prev_last_page` 邊界）：只在「從未爬過的新頁碼範圍」偵測連續 2 頁 `page_new == 0` → 自動暫停，回傳上次成功頁碼
+- 改用 `prev_last_page` 取代舊的 `had_new_entries` flag，修正從已知區段重新開始時誤判的問題
+- `scrape_new_releases` 亦加入 `pause_event` 支援（手動暫停）
+
+**相鄰頁重複偵測（新）**
+- `scrape_listing_pages` 新增相鄰頁比對：若第 N 頁與第 N+1 頁的番號集合**完全相同**，立刻暫停並告警
+- 根本原因：session 失效時 JavDB 把所有頁碼請求都回傳第 1 頁內容（固定 40 筆），舊邏輯要等連續 2 頁零新增才發現，新偵測第 2 頁就能抓到
+
+**⏸ 手動暫停 / ✖ 中止按鈕（DatabaseManagerDialog）**
+- 執行中顯示「⏸ 暫停」與「✖ 中止」兩個按鈕
+- 暫停：設 `pause_event`，下一頁迭代前生效，進度正常儲存
+- 中止：同時設 `abort_event` + `pause_event`，本次新增不儲存，起始頁 Spinbox 還原
+
+**全量建置頁碼手動控制**
+- UI 新增「從第 X 頁，爬 N 頁」設定列（起始頁 + 頁數各一個 Spinbox）
+- 不再從 state 自動算 `start_page`，由使用者在 UI 確認後執行
+- 每次跑完自動更新起始頁 Spinbox 至 `last_page + 1`
+
+**資料庫狀態顯示**
+- 新增「上次停在第 X 頁（可手動修改）+ 儲存」：直接在 UI 改寫 `enrich_state.json` 的 `last_page`，同步更新起始頁 Spinbox
+
+**Bug 修正**
+- `_run_build`：修正 `prev_last` UnboundLocalError（Python closure 變數先用後賦值）→ 移至 `state` 讀取後立刻賦值
+- `last_page` 污染：中止時不再更新 `enrich_state.json`，保留原始頁碼
+
+**Session Cookie UI**
+- Cookie 輸入改為彈出視窗（原本是 inline Entry），可完整檢視現有值，貼入新值後儲存
+
+**登入狀態偵測（新）**
+- `fetcher.check_login_status()`：啟動後抓首頁，偵測是否有 `sign_in` 連結判斷登入狀態
+- 追新 / 全量建置開始時 log 顯示 `✅ 已登入` 或 `❌ 未登入`，方便確認 session 是否有效
+
+---
+
+⚠ **待確認（下次測試前需處理）**
+- [ ] session cookie 是否有效：需重新登入 javdb.com 取得新 `_jdb_session`
+- [ ] `enrich_state.json` 的 `last_page` 需手動修正回正確值（上一輪 session 失效導致數值被污染）
+- [ ] 相鄰頁重複偵測、自動暫停、中止按鈕尚未實際跑過完整測試
+
+---
+
+### 2026-05-22（feature/lookup-enrichment）— session 2
+
+**修正全量建置爬蟲無法翻頁**
+- 根本原因：JavDB 把 `/videos?page=X` 重導向至首頁 `/`，非登入狀態下所有頁碼回傳相同 40 筆，造成爬 315 頁只累積 85 筆
+- `enricher._fetch_listing_page` URL 修正：`/videos?page={n}` → `/?page={n}`
+- 確認登入後翻頁正常（Page 1 / 2 / 10 各不相同）
+
+**JavDB Session Cookie 支援**
+- `Fetcher.start()` 改為自動讀取 `data/javdb_session.txt`，若存在則注入 `_jdb_session` cookie
+- `data/javdb_session.txt` 加入 `.gitignore`（敏感資訊）
+- `DatabaseManagerDialog` 新增「JavDB Session Cookie」區塊：顯示目前設定狀態，可直接貼入 URL-encoded 或 decoded 的 cookie 值並儲存（`_save_cookie` 自動 URL decode）
+- Cookie 到期後只需重新貼入，追新 / 全量建置 / `bulk_enrich.py` 全部自動生效
+
+### 2026-05-22（feature/lookup-enrichment）
+
+**資料庫管理對話框**
+- 主視窗資料庫區塊從「更新資料庫」+「批次建置」兩個按鈕合併為單一「資料庫管理...」入口
+- 新增 `DatabaseManagerDialog` Toplevel：追新 / 全量建置兩個獨立按鈕，各附 ℹ 說明
+- 執行中兩按鈕互鎖，關閉按鈕 disable 防止中途強關 Playwright
+- `enrich_state.json` 新增 `last_updated` 欄位，對話框顯示統計列
+
+**bulk_enrich 邏輯修正**
+- 全量建置改回 `scrape_listing_pages`（無 stop 條件，`last_page` resume）：page drift 只造成多幾個 request，不漏抓
+- 追新移除 `max_pages=20` 上限，改為 `max_pages=9999`，只靠連續已知條件停止，確保久未執行時（如 Day 125）仍能完整覆蓋所有新番
+- `retry_no_data` 加入 `max_retries=50` 上限，避免大量 no_data 造成 GUI 卡頓
+
+**命名規範修正**
+- `build_filename()` 修正：女優名在片名後再出現一次（符合命名規範 `[番號] [女優名] - [片名] [女優名].[副檔名]`）
+- 更新 `test_fetch.py` 對應測試，目前共 54 tests passed
+
+**修正全量建置說明文字**
+- 原說明「從第 1 頁開始」、「遇到連續已知番號自動停止」與實際行為不符
+- 修正為：從上次停止的頁碼繼續、沒有連續已知判斷、穿越已知區段繼續往後爬
+
 ### 2026-05-06
 - 修復 scanner.py regex：加 `(?!\d)` 防止超過 5 位數字被截斷（例如 `SONE-123456` 原本會錯誤抽出 `SONE-12345`）
 - 新增 19 個 `extract_code` 邊界案例單元測試（大小寫、括弧、無連字號、品質標籤、日期前綴、多集後綴、溢位等），總計 24 tests passed

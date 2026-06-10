@@ -1,3 +1,45 @@
+# AV Code Rename — TODO
+
+---
+
+## 社群資料庫計畫（新）
+
+### 目標
+預建 `javdb_lookup.json`（只含番號+片名，無女優名）打包進工具，讓用戶不需自己爬就能快速命名。女優名在用戶第一次查詢時由工具自動補入本地 lookup。
+
+### 架構
+```
+用戶啟動工具
+  ├─ lookup 有且非 partial → 直接用
+  ├─ lookup 有但 partial   → 顯示片名，女優名補爬 javdb
+  └─ lookup 沒有           → fallback：爬 javdb 個別番號頁
+```
+
+### Task: 批次建置基礎資料庫（方案A）
+- [ ] 你自己跑 `python scripts/bulk_enrich.py --max-pages 1000`（預計幾小時），產出含 ~28,000 筆的基礎 `data/javdb_lookup.json`
+- [ ] 確認 `data/javdb_lookup.json` 條目格式正確（title 有值，actresses 為 `[]`，partial 為 `true`）
+- [ ] 把這份 lookup.json 打包進 GitHub Release（讓用戶下載時就有基礎庫）
+
+### Task: GUI 提示文字
+- [ ] 在「資料庫」區塊加一行說明 label：`⚠ 資料庫收錄番號與片名，女優名需首次查詢時自動補入`
+
+### Task: 社群協作（GitHub PR 流程）
+- [ ] 設計 contribution.json 格式（只含新增條目，不含已有條目）
+- [ ] GUI 加「貢獻資料」按鈕 → 產生 contribution.json
+- [ ] 撰寫 GitHub Actions 驗證腳本：
+  - schema 檢查（每條必須有 title string，actresses array）
+  - 番號格式 regex 驗證
+  - append-only 檢查（PR 不能修改或刪除已有條目）
+- [ ] 決定 contribution 流程（fork + PR，還是 issue 上傳）
+
+### 說明：按鈕對應功能
+| 按鈕 | 功能 |
+|------|------|
+| 更新資料庫 | `scrape_new_releases`：追最新幾頁，遇到已知番號停止 |
+| 批次建置 | `scrape_listing_pages`：大量爬 listing 頁建基礎庫（同 bulk_enrich.py） |
+
+---
+
 # AV Code Rename — Implementation Plan: tkinter UI + 命名格式選擇
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,0 +1,24 @@
+name: Process Community Contribution
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    if: startsWith(github.event.issue.title, '[community-db]')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Process contribution
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python .github/scripts/process_contribution.py
+        working-directory: ${{ github.workspace }}

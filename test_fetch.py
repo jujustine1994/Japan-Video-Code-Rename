@@ -2,6 +2,10 @@ import sys
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 
+import json
+from datetime import datetime
+from unittest.mock import MagicMock
+
 from fetcher import Fetcher
 from renamer import build_filename
 from scanner import extract_code
@@ -77,7 +81,7 @@ def test_extract_digits_overflow_returns_none():
 
 def test_build_filename_default():
     assert build_filename("GTJ-065", ["宮崎あや"], "串刺し拷問", ".mp4") == \
-        "GTJ-065 宮崎あや - 串刺し拷問.mp4"
+        "GTJ-065 宮崎あや - 串刺し拷問 宮崎あや.mp4"
 
 def test_build_filename_actress_last():
     assert build_filename("GTJ-065", ["宮崎あや"], "串刺し拷問", ".mp4",
@@ -87,7 +91,7 @@ def test_build_filename_actress_last():
 def test_build_filename_actress_first():
     assert build_filename("GTJ-065", ["宮崎あや"], "串刺し拷問", ".mp4",
                           format_order=["actress", "code", "title"]) == \
-        "宮崎あや GTJ-065 - 串刺し拷問.mp4"
+        "宮崎あや GTJ-065 - 串刺し拷問 宮崎あや.mp4"
 
 def test_build_filename_title_first():
     assert build_filename("GTJ-065", ["宮崎あや"], "串刺し拷問", ".mp4",
@@ -97,7 +101,7 @@ def test_build_filename_title_first():
 def test_build_filename_with_part():
     assert build_filename("GTJ-065", ["宮崎あや"], "串刺し拷問", ".mp4",
                           part=1, format_order=["code", "actress", "title"]) == \
-        "GTJ-065 宮崎あや - 串刺し拷問(1).mp4"
+        "GTJ-065 宮崎あや - 串刺し拷問 宮崎あや(1).mp4"
 
 # ─────────────────────────────────────────────────────────────
 
@@ -146,3 +150,60 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ── config 預設值測試 ───────────────────────────────────────────
+
+import config
+
+def test_config_has_update_stop_after_known():
+    cfg = config.load()
+    assert cfg["update_stop_after_known"] == 50
+
+def test_config_has_update_max_new_release_pages():
+    cfg = config.load()
+    assert cfg["update_max_new_release_pages"] == 10
+
+
+# ── partial 自動補全測試 ──────────────────────────────────────
+
+def test_query_auto_completes_partial_entry(tmp_path):
+    lookup_file = tmp_path / "lookup.json"
+    cache_file = tmp_path / "cache.json"
+    lookup_file.write_text(
+        json.dumps({"PARTIAL-001": {"title": "仮タイトル", "actresses": [], "partial": True}}),
+        encoding="utf-8"
+    )
+    cache_file.write_text("{}", encoding="utf-8")
+
+    fetcher = Fetcher(str(cache_file), str(lookup_file))
+    fetcher._query_javdb = MagicMock(return_value={
+        "title": "正式タイトル",
+        "actresses": ["完全女優"],
+        "queried_at": datetime.now().isoformat(),
+    })
+
+    result = fetcher.query("PARTIAL-001")
+
+    fetcher._query_javdb.assert_called_once_with("PARTIAL-001")
+    assert result["actresses"] == ["完全女優"]
+    assert result["title"] == "正式タイトル"
+    assert "partial" not in fetcher.lookup.get("PARTIAL-001", {})
+
+
+def test_query_non_partial_entry_skips_network(tmp_path):
+    lookup_file = tmp_path / "lookup.json"
+    cache_file = tmp_path / "cache.json"
+    lookup_file.write_text(
+        json.dumps({"FULL-001": {"title": "完全作品", "actresses": ["既存女優"]}}),
+        encoding="utf-8"
+    )
+    cache_file.write_text("{}", encoding="utf-8")
+
+    fetcher = Fetcher(str(cache_file), str(lookup_file))
+    fetcher._query_javdb = MagicMock()
+
+    result = fetcher.query("FULL-001")
+
+    fetcher._query_javdb.assert_not_called()
+    assert result["title"] == "完全作品"
