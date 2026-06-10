@@ -47,7 +47,7 @@ class CommunitySync:
 
     def get_community_stats(self) -> dict:
         try:
-            data = self._fetch_url(f"{COMMUNITY_RAW_BASE}/community_stats.json")
+            data = self._fetch_url(f"{COMMUNITY_RAW_BASE}/data/community_stats.json")
             return json.loads(data)
         except Exception:
             return {"count": 0, "last_updated": "無法取得"}
@@ -55,7 +55,7 @@ class CommunitySync:
     def get_contribute_count(self) -> int:
         local = self._load_local()
         try:
-            data = self._fetch_url(f"{COMMUNITY_RAW_BASE}/javdb_community.json")
+            data = self._fetch_url(f"{COMMUNITY_RAW_BASE}/data/javdb_community.json")
             community = json.loads(data)
         except Exception:
             return 0
@@ -70,7 +70,7 @@ class CommunitySync:
         if progress_cb:
             progress_cb("下載社群資料庫中...")
         try:
-            data = self._fetch_url(f"{COMMUNITY_RAW_BASE}/javdb_community.json")
+            data = self._fetch_url(f"{COMMUNITY_RAW_BASE}/data/javdb_community.json")
             community: dict = json.loads(data)
         except Exception as e:
             if progress_cb:
@@ -107,7 +107,7 @@ class CommunitySync:
         if progress_cb:
             progress_cb("計算可貢獻筆數中...")
         try:
-            data = self._fetch_url(f"{COMMUNITY_RAW_BASE}/javdb_community.json")
+            data = self._fetch_url(f"{COMMUNITY_RAW_BASE}/data/javdb_community.json")
             community: dict = json.loads(data)
         except Exception as e:
             if progress_cb:

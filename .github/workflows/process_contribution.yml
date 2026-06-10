@@ -21,3 +21,4 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python .github/scripts/process_contribution.py
+        working-directory: ${{ github.workspace }}

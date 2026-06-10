@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 CODE_REGEX = re.compile(r'^[A-Z]+-\d+$')
-DB_PATH    = Path('javdb_community.json')
-STATS_PATH = Path('community_stats.json')
+DB_PATH    = Path('data/javdb_community.json')
+STATS_PATH = Path('data/community_stats.json')
 
 issue_number = os.environ['ISSUE_NUMBER']
 body         = os.environ['ISSUE_BODY']
