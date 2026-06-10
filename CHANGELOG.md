@@ -21,6 +21,57 @@
 
 ## 更新記錄
 
+### 2026-06-10
+- 修正：`winget install Python` 加入 `--override "/quiet PrependPath=1 Include_pip=1"`，確保靜默安裝後 Python 自動加進 PATH
+
+### 2026-05-24（feature/lookup-enrichment）— session 3
+
+**全量建置除錯強化**
+- `enricher._fetch_listing_page`：失敗時改為記錄實際 URL 與頁面標題（原本靜默回傳 `[]`，無法分辨是 session 失效還是網路問題）
+
+**全量建置自動暫停**
+- `scrape_listing_pages` 新增 `pause_event` 參數與連續零新增偵測
+- 條件（`prev_last_page` 邊界）：只在「從未爬過的新頁碼範圍」偵測連續 2 頁 `page_new == 0` → 自動暫停，回傳上次成功頁碼
+- 改用 `prev_last_page` 取代舊的 `had_new_entries` flag，修正從已知區段重新開始時誤判的問題
+- `scrape_new_releases` 亦加入 `pause_event` 支援（手動暫停）
+
+**相鄰頁重複偵測（新）**
+- `scrape_listing_pages` 新增相鄰頁比對：若第 N 頁與第 N+1 頁的番號集合**完全相同**，立刻暫停並告警
+- 根本原因：session 失效時 JavDB 把所有頁碼請求都回傳第 1 頁內容（固定 40 筆），舊邏輯要等連續 2 頁零新增才發現，新偵測第 2 頁就能抓到
+
+**⏸ 手動暫停 / ✖ 中止按鈕（DatabaseManagerDialog）**
+- 執行中顯示「⏸ 暫停」與「✖ 中止」兩個按鈕
+- 暫停：設 `pause_event`，下一頁迭代前生效，進度正常儲存
+- 中止：同時設 `abort_event` + `pause_event`，本次新增不儲存，起始頁 Spinbox 還原
+
+**全量建置頁碼手動控制**
+- UI 新增「從第 X 頁，爬 N 頁」設定列（起始頁 + 頁數各一個 Spinbox）
+- 不再從 state 自動算 `start_page`，由使用者在 UI 確認後執行
+- 每次跑完自動更新起始頁 Spinbox 至 `last_page + 1`
+
+**資料庫狀態顯示**
+- 新增「上次停在第 X 頁（可手動修改）+ 儲存」：直接在 UI 改寫 `enrich_state.json` 的 `last_page`，同步更新起始頁 Spinbox
+
+**Bug 修正**
+- `_run_build`：修正 `prev_last` UnboundLocalError（Python closure 變數先用後賦值）→ 移至 `state` 讀取後立刻賦值
+- `last_page` 污染：中止時不再更新 `enrich_state.json`，保留原始頁碼
+
+**Session Cookie UI**
+- Cookie 輸入改為彈出視窗（原本是 inline Entry），可完整檢視現有值，貼入新值後儲存
+
+**登入狀態偵測（新）**
+- `fetcher.check_login_status()`：啟動後抓首頁，偵測是否有 `sign_in` 連結判斷登入狀態
+- 追新 / 全量建置開始時 log 顯示 `✅ 已登入` 或 `❌ 未登入`，方便確認 session 是否有效
+
+---
+
+⚠ **待確認（下次測試前需處理）**
+- [ ] session cookie 是否有效：需重新登入 javdb.com 取得新 `_jdb_session`
+- [ ] `enrich_state.json` 的 `last_page` 需手動修正回正確值（上一輪 session 失效導致數值被污染）
+- [ ] 相鄰頁重複偵測、自動暫停、中止按鈕尚未實際跑過完整測試
+
+---
+
 ### 2026-05-22（feature/lookup-enrichment）— session 2
 
 **修正全量建置爬蟲無法翻頁**
