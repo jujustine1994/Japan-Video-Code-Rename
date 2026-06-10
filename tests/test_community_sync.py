@@ -108,3 +108,60 @@ def test_download_network_error_returns_zero(tmp_path):
     with patch.object(sync, "_fetch_url", side_effect=Exception("timeout")):
         added = sync.download(tmp_path / "backups")
     assert added == 0
+
+
+def test_contribute_sends_only_complete_entries(tmp_path):
+    sync = _make_sync(tmp_path)
+    issues_created = []
+
+    def fake_fetch(url):
+        return json.dumps(SAMPLE_COMMUNITY).encode()
+
+    def fake_create_issue(title, body):
+        issues_created.append((title, json.loads(body)))
+
+    with patch.object(sync, "_fetch_url", side_effect=fake_fetch), \
+         patch.object(sync, "_create_issue", side_effect=fake_create_issue):
+        sent = sync.contribute()
+
+    # IPX-001 only (SSIS-001 already in community; NEW-001 partial; OLD-001 no actresses)
+    assert sent == 1
+    assert len(issues_created) == 1
+    title, body = issues_created[0]
+    assert title.startswith("[community-db]")
+    assert body["source"] == "av-code-rename"
+    assert body["version"] == 1
+    assert "IPX-001" in body["entries"]
+    assert "NEW-001" not in body["entries"]
+
+
+def test_contribute_chunks_large_dataset(tmp_path):
+    # 2500 entries → 3 Issues (ceil(2500/1000))
+    large_local = {
+        f"CODE-{i:04d}": {"title": f"タイトル{i}", "actresses": ["女優"], "partial": False}
+        for i in range(2500)
+    }
+    p = tmp_path / "javdb_lookup.json"
+    p.write_text(json.dumps(large_local), encoding="utf-8")
+    sync = CommunitySync(p)
+
+    issues_created = []
+    with patch.object(sync, "_fetch_url", return_value=b"{}"), \
+         patch.object(sync, "_create_issue", side_effect=lambda t, b: issues_created.append(t)), \
+         patch("time.sleep"):
+        sent = sync.contribute()
+
+    assert sent == 2500
+    assert len(issues_created) == 3
+
+
+def test_contribute_nothing_to_send(tmp_path):
+    sync = _make_sync(tmp_path)
+    full_community = {
+        "SSIS-001": "A", "IPX-001": "B", "OLD-001": "D"
+    }
+    with patch.object(sync, "_fetch_url", return_value=json.dumps(full_community).encode()), \
+         patch.object(sync, "_create_issue") as mock_issue:
+        sent = sync.contribute()
+    assert sent == 0
+    mock_issue.assert_not_called()

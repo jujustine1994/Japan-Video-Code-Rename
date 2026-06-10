@@ -104,7 +104,72 @@ class CommunitySync:
         return added
 
     def contribute(self, progress_cb=None) -> int:
-        raise NotImplementedError
+        if progress_cb:
+            progress_cb("計算可貢獻筆數中...")
+        try:
+            data = self._fetch_url(f"{COMMUNITY_RAW_BASE}/javdb_community.json")
+            community: dict = json.loads(data)
+        except Exception as e:
+            if progress_cb:
+                progress_cb(f"[ERROR] 無法下載社群資料庫：{e}")
+            return 0
+
+        local = self._load_local()
+        new_entries = {
+            code: entry["title"]
+            for code, entry in local.items()
+            if code not in community
+            and not entry.get("partial", False)
+            and entry.get("actresses")
+        }
+
+        if not new_entries:
+            if progress_cb:
+                progress_cb("沒有可貢獻的新番號")
+            return 0
+
+        total = len(new_entries)
+        if progress_cb:
+            progress_cb(f"共 {total:,} 筆可貢獻，開始送出...")
+
+        sent = 0
+        codes = list(new_entries.items())
+        for batch_start in range(0, total, CHUNK_SIZE):
+            chunk = dict(codes[batch_start:batch_start + CHUNK_SIZE])
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            title = f"[community-db] batch +{len(chunk)} entries {ts}"
+            body = json.dumps(
+                {"source": "av-code-rename", "version": 1, "entries": chunk},
+                ensure_ascii=False,
+            )
+            try:
+                self._create_issue(title, body)
+                sent += len(chunk)
+                if progress_cb:
+                    progress_cb(f"已送出 {sent:,} / {total:,} 筆")
+                time.sleep(2)
+            except Exception as e:
+                if progress_cb:
+                    progress_cb(f"[ERROR] 送出失敗：{e}")
+                break
+
+        if progress_cb:
+            progress_cb(f"貢獻完成：送出 {sent:,} 筆，等待 GitHub Action 驗證後合併")
+        return sent
 
     def _create_issue(self, title: str, body: str):
-        raise NotImplementedError
+        payload = json.dumps({"title": title, "body": body}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{COMMUNITY_API_BASE}/issues",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {COMMUNITY_TOKEN}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+                "User-Agent": "av-code-rename",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status not in (200, 201):
+                raise RuntimeError(f"HTTP {resp.status}")
