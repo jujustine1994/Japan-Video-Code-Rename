@@ -2,7 +2,7 @@
 
 ## 目前狀態
 
-**階段：完整實作完成，tkinter GUI 版本**
+**階段：完整實作完成，tkinter GUI 版本 + 社群資料庫 + 安全強化**
 
 ### 已完成
 - [x] 命名規範文件（naming_convention.md）
@@ -12,10 +12,16 @@
 - [x] config.py — 設定讀寫（config.json）
 - [x] scanner.py — 番號提取、多集偵測、資料夾掃描
 - [x] renamer.py — 命名規範組成、改名、log 寫入
-- [x] fetcher.py — javdb Playwright 爬蟲、性別過濾、快取
-- [x] main.py — 4-Phase TUI 主程式
+- [x] fetcher.py — javdb Playwright 爬蟲、性別過濾、快取、登入狀態偵測
+- [x] enricher.py — 追新 / 全量建置、暫停/中止、相鄰頁重複偵測
+- [x] main.py — tkinter GUI（AVRenameApp + DatabaseManagerDialog + NamingFormatDialog）
 - [x] launcher.ps1 + AV Code Rename 啟動器.bat
-- [x] 全部 16 個單元測試通過
+- [x] community_sync.py — 社群 DB 下載 / 貢獻（CommunitySync）
+- [x] Cloudflare Worker（workers/index.js）— 代理貢獻請求，含完整安全驗證
+- [x] GitHub Action（.github/workflows/process_contribution.yml + process_contribution.py）
+- [x] 安全強化：Worker + GitHub Action 雙層驗證（番號格式、筆數、title 長度、body 大小）
+- [x] Wrangler 部署設定（workers/wrangler.jsonc）— Worker 程式碼進 repo，`wrangler deploy` 即可更新
+- [x] 全部 80 個單元測試通過
 
 ---
 
