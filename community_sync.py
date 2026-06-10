@@ -67,7 +67,41 @@ class CommunitySync:
         )
 
     def download(self, backup_dir: Path, progress_cb=None) -> int:
-        raise NotImplementedError
+        if progress_cb:
+            progress_cb("下載社群資料庫中...")
+        try:
+            data = self._fetch_url(f"{COMMUNITY_RAW_BASE}/javdb_community.json")
+            community: dict = json.loads(data)
+        except Exception as e:
+            if progress_cb:
+                progress_cb(f"[ERROR] 無法下載社群資料庫：{e}")
+            return 0
+
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        if self.local_lookup_path.exists():
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            dst = backup_dir / f"javdb_lookup_{ts}.json"
+            shutil.copy2(self.local_lookup_path, dst)
+            if progress_cb:
+                progress_cb(f"已備份至 {dst.name}")
+            backups = sorted(backup_dir.glob("javdb_lookup_*.json"))
+            for old in backups[:-BACKUP_COUNT]:
+                old.unlink()
+
+        local = self._load_local()
+        added = 0
+        for code, title in community.items():
+            if code not in local:
+                local[code] = {"title": title, "actresses": [], "partial": True}
+                added += 1
+
+        self.local_lookup_path.parent.mkdir(parents=True, exist_ok=True)
+        self.local_lookup_path.write_text(
+            json.dumps(local, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        if progress_cb:
+            progress_cb(f"下載完成：新增 {added:,} 筆")
+        return added
 
     def contribute(self, progress_cb=None) -> int:
         raise NotImplementedError

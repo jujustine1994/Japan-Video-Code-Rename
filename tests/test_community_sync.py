@@ -55,3 +55,56 @@ def test_get_contribute_count_network_error(tmp_path):
     with patch.object(sync, "_fetch_url", side_effect=Exception("timeout")):
         count = sync.get_contribute_count()
     assert count == 0
+
+
+def test_download_merges_new_entries(tmp_path):
+    sync = _make_sync(tmp_path)
+    backup_dir = tmp_path / "backups"
+
+    def fake_fetch(url):
+        return json.dumps({"SSIS-001": "タイトルA", "BRAND_NEW-001": "新タイトル"}).encode()
+
+    with patch.object(sync, "_fetch_url", side_effect=fake_fetch):
+        added = sync.download(backup_dir)
+
+    assert added == 1
+    result = json.loads(sync.local_lookup_path.read_text(encoding="utf-8"))
+    assert "BRAND_NEW-001" in result
+    assert result["BRAND_NEW-001"]["partial"] is True
+    assert result["BRAND_NEW-001"]["actresses"] == []
+    # 原有資料不被覆蓋
+    assert result["SSIS-001"]["actresses"] == ["女優A"]
+
+
+def test_download_creates_backup(tmp_path):
+    sync = _make_sync(tmp_path)
+    backup_dir = tmp_path / "backups"
+
+    with patch.object(sync, "_fetch_url", return_value=b"{}"):
+        sync.download(backup_dir)
+
+    backups = list(backup_dir.glob("javdb_lookup_*.json"))
+    assert len(backups) == 1
+
+
+def test_download_keeps_max_backups(tmp_path):
+    sync = _make_sync(tmp_path)
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+
+    # 預先放 3 個舊備份
+    for i in range(3):
+        (backup_dir / f"javdb_lookup_2026010{i}_000000.json").write_text("{}")
+
+    with patch.object(sync, "_fetch_url", return_value=b"{}"):
+        sync.download(backup_dir)
+
+    backups = list(backup_dir.glob("javdb_lookup_*.json"))
+    assert len(backups) == 3  # 最舊的被刪，維持 3 份
+
+
+def test_download_network_error_returns_zero(tmp_path):
+    sync = _make_sync(tmp_path)
+    with patch.object(sync, "_fetch_url", side_effect=Exception("timeout")):
+        added = sync.download(tmp_path / "backups")
+    assert added == 0
