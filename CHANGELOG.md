@@ -31,8 +31,9 @@
 - 新增 `tests/test_process_contribution.py`：15 個單元測試覆蓋上述所有安全檢查，全部通過
 - 整體 80 個測試全過
 
-**Worker 端（待手動更新）**
-- 需在 Cloudflare Dashboard 的 Worker 程式碼加入相同的驗證（番號格式、筆數上限、title 長度），見本次對話的操作說明
+**Worker 端（已 deploy）**
+- `workers/index.js` + `workers/wrangler.jsonc` 進 repo，透過 `wrangler deploy` 部署，不再需要 Dashboard 手動編輯
+- 加入與 GitHub Action 一致的驗證：番號格式 `^[A-Z]+-\d+$`、entries 筆數 1–1000、title 長度 1–200
 
 ---
 
