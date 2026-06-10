@@ -769,10 +769,52 @@ class DatabaseManagerDialog:
         threading.Thread(target=worker, daemon=True).start()
 
     def _run_download(self):
-        self._log("（下載功能待 Task 6 接線）\n")
+        if self._running:
+            return
+        self._set_running(True)
+        self._pause_event.clear()
+        self._abort_event.clear()
+
+        from community_sync import CommunitySync
+        lookup_path = SCRIPT_DIR / self._cfg.get("lookup_file", "data/javdb_lookup.json")
+        backup_dir  = SCRIPT_DIR / "data" / "backups"
+        sync = CommunitySync(lookup_path)
+
+        def worker():
+            try:
+                sync.download(backup_dir, progress_cb=lambda m: self.win.after(
+                    0, lambda msg=m: self._log(msg + "\n")))
+                self.win.after(0, self._refresh_stats)
+                self.win.after(0, self._refresh_community_stats)
+            finally:
+                self.win.after(0, lambda: self._set_running(False))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _run_contribute(self):
-        self._log("（貢獻功能待 Task 6 接線）\n")
+        if self._running:
+            return
+        contrib_text = self.lbl_contribute_count.cget("text")
+        if not messagebox.askyesno(
+            "確認貢獻",
+            f"將把本機的新番號送出到社群資料庫。\n{contrib_text}\n\n確定送出？",
+            parent=self.win,
+        ):
+            return
+
+        self._set_running(True)
+        from community_sync import CommunitySync
+        lookup_path = SCRIPT_DIR / self._cfg.get("lookup_file", "data/javdb_lookup.json")
+        sync = CommunitySync(lookup_path)
+
+        def worker():
+            try:
+                sync.contribute(progress_cb=lambda m: self.win.after(
+                    0, lambda msg=m: self._log(msg + "\n")))
+            finally:
+                self.win.after(0, lambda: self._set_running(False))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _save_last_page(self):
         try:
