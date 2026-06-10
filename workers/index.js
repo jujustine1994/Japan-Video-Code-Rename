@@ -4,6 +4,11 @@ const MAX_TITLE   = 200;
 
 export default {
   async fetch(request, env) {
+    const { success } = await env.RATE_LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') ?? 'unknown' });
+    if (!success) {
+      return json({ ok: false, error: 'Rate limit exceeded' }, 429);
+    }
+
     if (request.method !== 'POST') {
       return json({ ok: false, error: 'Method not allowed' }, 405);
     }
