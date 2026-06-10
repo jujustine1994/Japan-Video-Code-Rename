@@ -21,6 +21,42 @@
 
 ## 更新記錄
 
+### 2026-06-10（feature/community-sync）
+
+**社群同步功能**
+- 新增 `community_sync.py`（`CommunitySync` 類別）：下載社群資料庫 + 貢獻本機資料
+- 貢獻流程：diff 本機 vs 社群 → 只送 `partial=False` 且有女優名的完整筆數 → 每 1,000 筆一批送出
+- 下載流程：從 GitHub raw URL 下載社群 DB → 備份本機（保留最近 3 份）→ 合併（社群有本機無則新增，本機已有不覆蓋）
+- 新增 `data/javdb_community.json`（社群共享資料庫，初始空白）
+- 新增 `data/community_stats.json`（社群統計，記錄筆數與更新時間）
+
+**Cloudflare Worker Token Proxy**
+- 貢獻時改由 Cloudflare Worker 代理，app 端不持有 GitHub token
+- Worker URL：`av-community-db.jujustine1994.workers.dev`
+- GITHUB_TOKEN 存為 Cloudflare Secret；GITHUB_REPO 存為 Plaintext 環境變數
+
+**GitHub Action 自動驗證**
+- 新增 `.github/workflows/process_contribution.yml`：issues.opened 觸發
+- 新增 `.github/scripts/process_contribution.py`：驗證來源、格式、不覆蓋現有 key，通過後 commit + 關閉 Issue
+
+**UI 整合**
+- 主視窗移除「命名格式順序」區塊（frame_fmt），改為 `⚙ 命名格式...` 按鈕開啟 `NamingFormatDialog` popup
+- `DatabaseManagerDialog` 視窗高度 640 → 720，新增「社群同步」LabelFrame
+  - 顯示社群筆數、可貢獻筆數
+  - 「⬇ 下載最新」「⬆ 貢獻我的資料」按鈕，與其他操作互鎖
+
+**測試**
+- 新增 `tests/test_community_sync.py`：11 個單元測試，全部通過
+- 修正 `test_enricher.py`：4 個 mock 補 `progress_cb=None` 參數（與 `_fetch_listing_page` 簽名對齊）
+- 整體 65 個測試全過
+
+**整合測試結果**
+- Worker 驗證（空 entries → 400、GET → 405、正常送出 → ok:true）✅
+- GitHub raw URL 可讀（community_stats、community DB）✅
+- GitHub Action 端到端流程（Issue 建立 → 驗證 → 合併 → 關閉）✅
+
+---
+
 ### 2026-06-10
 - 修正：`winget install Python` 加入 `--override "/quiet PrependPath=1 Include_pip=1"`，確保靜默安裝後 Python 自動加進 PATH
 - 修正：`launcher.ps1` 加入全域 `trap`，攔截未處理例外，防止執行失敗時視窗直接閃退
