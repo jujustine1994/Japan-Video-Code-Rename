@@ -60,6 +60,9 @@ class AVRenameApp:
         ttk.Radiobutton(frame_dir, text="選擇檔案", variable=self._mode,
                         value="files", command=self._on_mode_change).grid(
             row=0, column=1, sticky="w")
+        ttk.Button(frame_dir, text="⚙ 命名格式...",
+                   command=self._open_fmt_dialog).grid(
+            row=0, column=2, padx=(12, 0), sticky="e")
 
         self.dir_var = tk.StringVar(value=self._cfg.get("target_dir", ""))
         self.entry_dir = ttk.Entry(frame_dir, textvariable=self.dir_var, width=52)
@@ -67,30 +70,16 @@ class AVRenameApp:
         ttk.Button(frame_dir, text="瀏覽", command=self._browse).grid(
             row=1, column=2, padx=(6, 0), pady=(6, 0))
 
-        # 命名格式
-        frame_fmt = ttk.LabelFrame(self.root, text=" 命名格式順序 ", padding=8)
-        frame_fmt.grid(row=1, column=0, sticky="ew", **pad)
-        self.fmt_list = tk.Listbox(frame_fmt, height=3, selectmode="single",
-                                   width=16, font=("", 10))
-        for key in self._format_order:
-            self.fmt_list.insert("end", LABELS[key])
-        self.fmt_list.grid(row=0, column=0, rowspan=2, sticky="ns")
-        self.fmt_list.selection_set(0)
-        ttk.Button(frame_fmt, text="↑", width=4, command=self._move_up).grid(
-            row=0, column=1, padx=8, pady=(4, 2))
-        ttk.Button(frame_fmt, text="↓", width=4, command=self._move_down).grid(
-            row=1, column=1, padx=8, pady=(2, 4))
-
         # 開始按鈕
         frame_btn = tk.Frame(self.root)
-        frame_btn.grid(row=2, column=0, pady=6)
+        frame_btn.grid(row=1, column=0, pady=6)
         self.btn_start = ttk.Button(frame_btn, text="▶  開始掃描",
                                     command=self._start, width=22)
         self.btn_start.pack(ipady=6)
 
         # 進度區
         frame_prog = ttk.LabelFrame(self.root, text=" 處理進度 ", padding=8)
-        frame_prog.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 4))
+        frame_prog.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 4))
         self.lbl_progress = ttk.Label(frame_prog, text="等待開始...")
         self.lbl_progress.pack(anchor="w")
         self.progress_bar = ttk.Progressbar(frame_prog, mode="indeterminate", length=420)
@@ -102,7 +91,7 @@ class AVRenameApp:
 
         # 查詢完畢後的動作列（初始隱藏）
         self.frame_action = tk.Frame(self.root)
-        self.frame_action.grid(row=4, column=0, pady=(0, 12))
+        self.frame_action.grid(row=3, column=0, pady=(0, 12))
         self.btn_open_review = ttk.Button(
             self.frame_action, text="📋  開啟審閱清單",
             command=self._open_review_window, width=22)
@@ -112,7 +101,7 @@ class AVRenameApp:
 
         # 資料庫管理
         frame_db = ttk.LabelFrame(self.root, text=" 資料庫 ", padding=8)
-        frame_db.grid(row=5, column=0, sticky="ew", padx=14, pady=(0, 8))
+        frame_db.grid(row=4, column=0, sticky="ew", padx=14, pady=(0, 8))
         ttk.Button(frame_db, text="資料庫管理...",
                    command=self._open_db_manager, width=18).pack(anchor="w")
 
@@ -144,34 +133,12 @@ class AVRenameApp:
                 self.dir_var.set(f"已選擇 {len(self._selected_files)} 個檔案")
                 self.entry_dir.config(state="readonly")
 
-    def _move_up(self):
-        sel = self.fmt_list.curselection()
-        if not sel or sel[0] == 0:
-            return
-        i = sel[0]
-        val = self.fmt_list.get(i)
-        self.fmt_list.delete(i)
-        self.fmt_list.insert(i - 1, val)
-        self.fmt_list.selection_set(i - 1)
-        self._save_fmt()
-
-    def _move_down(self):
-        sel = self.fmt_list.curselection()
-        if not sel or sel[0] == self.fmt_list.size() - 1:
-            return
-        i = sel[0]
-        val = self.fmt_list.get(i)
-        self.fmt_list.delete(i)
-        self.fmt_list.insert(i + 1, val)
-        self.fmt_list.selection_set(i + 1)
-        self._save_fmt()
-
-    def _save_fmt(self):
-        self._format_order = [KEYS[self.fmt_list.get(i)]
-                               for i in range(self.fmt_list.size())]
-        cfg = config.load()
-        cfg["format_order"] = self._format_order
-        config.save(cfg)
+    def _open_fmt_dialog(self):
+        NamingFormatDialog(
+            self.root,
+            self._format_order,
+            on_save=lambda order: setattr(self, "_format_order", order),
+        )
 
     # ── 審閱清單視窗 ──────────────────────────────────────────
 
@@ -508,6 +475,72 @@ class AVRenameApp:
         except queue.Empty:
             pass
         self.root.after(100, self._poll_queue)
+
+
+class NamingFormatDialog:
+    def __init__(self, parent: tk.Tk, current_order: list, on_save):
+        self._on_save = on_save
+
+        self.win = tk.Toplevel(parent)
+        self.win.title("命名格式設定")
+        self.win.resizable(False, False)
+        self.win.grab_set()
+
+        parent.update_idletasks()
+        x = parent.winfo_x() + 40
+        y = parent.winfo_y() + 40
+        self.win.geometry(f"200x160+{x}+{y}")
+
+        self._fmt_list = tk.Listbox(
+            self.win, height=3, selectmode="single",
+            width=16, font=("", 10),
+        )
+        for key in current_order:
+            self._fmt_list.insert("end", LABELS[key])
+        self._fmt_list.grid(row=0, column=0, rowspan=2,
+                            padx=(14, 0), pady=14, sticky="ns")
+        self._fmt_list.selection_set(0)
+
+        ttk.Button(self.win, text="↑", width=4,
+                   command=self._move_up).grid(row=0, column=1, padx=8, pady=(14, 2))
+        ttk.Button(self.win, text="↓", width=4,
+                   command=self._move_down).grid(row=1, column=1, padx=8, pady=(2, 0))
+
+        btn_row = tk.Frame(self.win)
+        btn_row.grid(row=2, column=0, columnspan=2, pady=(8, 12))
+        ttk.Button(btn_row, text="確定", width=10,
+                   command=self._ok).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_row, text="取消", width=10,
+                   command=self.win.destroy).pack(side="left")
+
+    def _move_up(self):
+        sel = self._fmt_list.curselection()
+        if not sel or sel[0] == 0:
+            return
+        i = sel[0]
+        val = self._fmt_list.get(i)
+        self._fmt_list.delete(i)
+        self._fmt_list.insert(i - 1, val)
+        self._fmt_list.selection_set(i - 1)
+
+    def _move_down(self):
+        sel = self._fmt_list.curselection()
+        if not sel or sel[0] == self._fmt_list.size() - 1:
+            return
+        i = sel[0]
+        val = self._fmt_list.get(i)
+        self._fmt_list.delete(i)
+        self._fmt_list.insert(i + 1, val)
+        self._fmt_list.selection_set(i + 1)
+
+    def _ok(self):
+        new_order = [KEYS[self._fmt_list.get(i)]
+                     for i in range(self._fmt_list.size())]
+        cfg = config.load()
+        cfg["format_order"] = new_order
+        config.save(cfg)
+        self._on_save(new_order)
+        self.win.destroy()
 
 
 class DatabaseManagerDialog:
