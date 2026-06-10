@@ -562,10 +562,11 @@ class DatabaseManagerDialog:
         parent.update_idletasks()
         x = parent.winfo_x() + parent.winfo_width() + 10
         y = parent.winfo_y()
-        self.win.geometry(f"480x640+{x}+{y}")
+        self.win.geometry(f"480x720+{x}+{y}")
 
         self._build_ui()
         self._refresh_stats()
+        self._refresh_community_stats()
 
     def _build_ui(self):
         pad = {"padx": 14, "pady": 6}
@@ -646,6 +647,24 @@ class DatabaseManagerDialog:
         ttk.Button(cookie_frame, text="設定 Cookie...", command=self._open_cookie_dialog,
                    width=18).pack(anchor="w", pady=(4, 0))
         self._refresh_session_status()
+
+        # 社群同步
+        sync_frame = ttk.LabelFrame(self.win, text=" 社群同步 ", padding=8)
+        sync_frame.pack(fill="x", padx=14, pady=(0, 6))
+
+        self.lbl_community_count = ttk.Label(sync_frame, text="社群資料庫：載入中...")
+        self.lbl_community_count.pack(anchor="w")
+        self.lbl_contribute_count = ttk.Label(sync_frame, text="可貢獻：計算中...")
+        self.lbl_contribute_count.pack(anchor="w", pady=(2, 6))
+
+        sync_btn_row = tk.Frame(sync_frame)
+        sync_btn_row.pack(anchor="w")
+        self.btn_download = ttk.Button(sync_btn_row, text="⬇ 下載最新",
+                                       command=self._run_download, width=16)
+        self.btn_download.pack(side="left", padx=(0, 8))
+        self.btn_contribute = ttk.Button(sync_btn_row, text="⬆ 貢獻我的資料",
+                                         command=self._run_contribute, width=16)
+        self.btn_contribute.pack(side="left")
 
         # Log
         log_frame = ttk.LabelFrame(self.win, text=" 進度 ", padding=8)
@@ -733,6 +752,28 @@ class DatabaseManagerDialog:
         self.last_page_var.set(str(lp))
         self.start_page_var.set(str(lp + 1))
 
+    def _refresh_community_stats(self):
+        from community_sync import CommunitySync
+        lookup_path = SCRIPT_DIR / self._cfg.get("lookup_file", "data/javdb_lookup.json")
+        sync = CommunitySync(lookup_path)
+
+        def worker():
+            stats = sync.get_community_stats()
+            count_str = (f"社群資料庫：{stats['count']:,} 筆"
+                         f"（更新：{stats['last_updated'][:10]}）")
+            contrib = sync.get_contribute_count()
+            contrib_str = f"可貢獻新番號：{contrib:,} 筆"
+            self.win.after(0, lambda: self.lbl_community_count.config(text=count_str))
+            self.win.after(0, lambda: self.lbl_contribute_count.config(text=contrib_str))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _run_download(self):
+        self._log("（下載功能待 Task 6 接線）\n")
+
+    def _run_contribute(self):
+        self._log("（貢獻功能待 Task 6 接線）\n")
+
     def _save_last_page(self):
         try:
             lp = int(self.last_page_var.get())
@@ -759,6 +800,8 @@ class DatabaseManagerDialog:
         self.btn_update.config(state=state)
         self.btn_build.config(state=state)
         self.btn_close.config(state=state)
+        self.btn_download.config(state=state)
+        self.btn_contribute.config(state=state)
         self.btn_pause.config(state="normal" if running else "disabled", text="⏸ 暫停")
         self.btn_abort.config(state="normal" if running else "disabled", text="✖ 中止")
 
