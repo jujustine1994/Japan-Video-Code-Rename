@@ -11,8 +11,8 @@ from datetime import datetime
 from pathlib import Path
 import urllib.request
 
-COMMUNITY_REPO_OWNER = "PLACEHOLDER_OWNER"
-COMMUNITY_REPO_NAME  = "PLACEHOLDER_REPO"
+COMMUNITY_REPO_OWNER = "jujustine1994"
+COMMUNITY_REPO_NAME  = "Japan-Video-Code-Rename"
 COMMUNITY_RAW_BASE   = (
     f"https://raw.githubusercontent.com"
     f"/{COMMUNITY_REPO_OWNER}/{COMMUNITY_REPO_NAME}/main"
