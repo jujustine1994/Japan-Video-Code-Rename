@@ -59,7 +59,7 @@ def test_scrape_new_releases_adds_new_entries(tmp_files):
     mock_fetcher = MagicMock()
 
     call_count = [0]
-    def mock_fetch(fetcher, page_num):
+    def mock_fetch(fetcher, page_num, progress_cb=None):
         call_count[0] += 1
         if page_num == 1:
             return [("NEW-001", "新作1"), ("NEW-002", "新作2")]
@@ -85,7 +85,7 @@ def test_scrape_new_releases_stops_on_consecutive_known(tmp_files):
     mock_fetcher = MagicMock()
     page_calls = [0]
 
-    def mock_fetch(fetcher, page_num):
+    def mock_fetch(fetcher, page_num, progress_cb=None):
         page_calls[0] += 1
         return [(f"KNOWN-{i:03d}", f"t{i}") for i in range(24)]
 
@@ -104,7 +104,7 @@ def test_scrape_new_releases_respects_max_pages(tmp_files):
     mock_fetcher = MagicMock()
 
     page_calls = [0]
-    def mock_fetch(fetcher, page_num):
+    def mock_fetch(fetcher, page_num, progress_cb=None):
         page_calls[0] += 1
         return [(f"NEW-{page_num:02d}-{i:02d}", f"title") for i in range(5)]
 
@@ -179,7 +179,7 @@ def test_scrape_listing_pages_uses_start_page_and_returns_count(tmp_files):
     mock_fetcher = MagicMock()
 
     pages_visited = []
-    def mock_fetch(fetcher, page_num):
+    def mock_fetch(fetcher, page_num, progress_cb=None):
         pages_visited.append(page_num)
         if page_num > 102:
             return []
