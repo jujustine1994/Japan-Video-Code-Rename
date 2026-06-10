@@ -117,8 +117,8 @@ def test_contribute_sends_only_complete_entries(tmp_path):
     def fake_fetch(url):
         return json.dumps(SAMPLE_COMMUNITY).encode()
 
-    def fake_create_issue(title, body):
-        issues_created.append((title, json.loads(body)))
+    def fake_create_issue(entries):
+        issues_created.append(entries)
 
     with patch.object(sync, "_fetch_url", side_effect=fake_fetch), \
          patch.object(sync, "_create_issue", side_effect=fake_create_issue):
@@ -127,12 +127,8 @@ def test_contribute_sends_only_complete_entries(tmp_path):
     # IPX-001 only (SSIS-001 already in community; NEW-001 partial; OLD-001 no actresses)
     assert sent == 1
     assert len(issues_created) == 1
-    title, body = issues_created[0]
-    assert title.startswith("[community-db]")
-    assert body["source"] == "av-code-rename"
-    assert body["version"] == 1
-    assert "IPX-001" in body["entries"]
-    assert "NEW-001" not in body["entries"]
+    assert "IPX-001" in issues_created[0]
+    assert "NEW-001" not in issues_created[0]
 
 
 def test_contribute_chunks_large_dataset(tmp_path):
@@ -147,7 +143,7 @@ def test_contribute_chunks_large_dataset(tmp_path):
 
     issues_created = []
     with patch.object(sync, "_fetch_url", return_value=b"{}"), \
-         patch.object(sync, "_create_issue", side_effect=lambda t, b: issues_created.append(t)), \
+         patch.object(sync, "_create_issue", side_effect=lambda e: issues_created.append(e)), \
          patch("time.sleep"):
         sent = sync.contribute()
 

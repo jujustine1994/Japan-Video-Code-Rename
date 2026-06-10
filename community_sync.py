@@ -21,7 +21,9 @@ COMMUNITY_API_BASE   = (
     f"https://api.github.com/repos"
     f"/{COMMUNITY_REPO_OWNER}/{COMMUNITY_REPO_NAME}"
 )
-COMMUNITY_TOKEN      = "PLACEHOLDER_TOKEN"
+COMMUNITY_WORKER_URL = (
+    "https://av-community-db.jujustine1994.workers.dev"
+)
 
 CHUNK_SIZE   = 1000
 BACKUP_COUNT = 3
@@ -136,14 +138,8 @@ class CommunitySync:
         codes = list(new_entries.items())
         for batch_start in range(0, total, CHUNK_SIZE):
             chunk = dict(codes[batch_start:batch_start + CHUNK_SIZE])
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            title = f"[community-db] batch +{len(chunk)} entries {ts}"
-            body = json.dumps(
-                {"source": "av-code-rename", "version": 1, "entries": chunk},
-                ensure_ascii=False,
-            )
             try:
-                self._create_issue(title, body)
+                self._create_issue(chunk)
                 sent += len(chunk)
                 if progress_cb:
                     progress_cb(f"已送出 {sent:,} / {total:,} 筆")
@@ -157,19 +153,18 @@ class CommunitySync:
             progress_cb(f"貢獻完成：送出 {sent:,} 筆，等待 GitHub Action 驗證後合併")
         return sent
 
-    def _create_issue(self, title: str, body: str):
-        payload = json.dumps({"title": title, "body": body}).encode("utf-8")
+    def _create_issue(self, entries: dict):
+        payload = json.dumps({"entries": entries}, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(
-            f"{COMMUNITY_API_BASE}/issues",
+            COMMUNITY_WORKER_URL,
             data=payload,
             headers={
-                "Authorization": f"Bearer {COMMUNITY_TOKEN}",
-                "Accept": "application/vnd.github+json",
                 "Content-Type": "application/json",
                 "User-Agent": "av-code-rename",
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            if resp.status not in (200, 201):
-                raise RuntimeError(f"HTTP {resp.status}")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read())
+            if not result.get("ok"):
+                raise RuntimeError(result.get("error", "Unknown error"))

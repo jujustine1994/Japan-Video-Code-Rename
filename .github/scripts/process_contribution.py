@@ -56,7 +56,7 @@ STATS_PATH.write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding=
 subprocess.run(['git', 'config', 'user.name', 'github-actions[bot]'], check=True)
 subprocess.run(['git', 'config', 'user.email',
                 'github-actions[bot]@users.noreply.github.com'], check=True)
-subprocess.run(['git', 'add', 'javdb_community.json', 'community_stats.json'], check=True)
+subprocess.run(['git', 'add', 'data/javdb_community.json', 'data/community_stats.json'], check=True)
 subprocess.run(['git', 'commit', '-m',
                 f'community: +{added} entries (issue #{issue_number})'], check=True)
 subprocess.run(['git', 'push'], check=True)
