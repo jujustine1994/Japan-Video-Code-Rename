@@ -21,6 +21,21 @@
 
 ## 更新記錄
 
+### 2026-06-10（feature/community-sync）— session 2
+
+**GitHub Action 安全強化**
+- `process_contribution.py` 重構：將驗證邏輯提取為 `validate_payload()` + `filter_entries()` 兩個純函數，方便單元測試
+- 新增 Issue body 大小保護（> 100KB 直接拒絕，防止超大 payload 讓 Action 爆炸）
+- 新增 entries 筆數上限（< 1 或 > 1,000 筆直接拒絕）
+- 新增 title 長度上限（單筆 > 200 字元則跳過）
+- 新增 `tests/test_process_contribution.py`：15 個單元測試覆蓋上述所有安全檢查，全部通過
+- 整體 80 個測試全過
+
+**Worker 端（待手動更新）**
+- 需在 Cloudflare Dashboard 的 Worker 程式碼加入相同的驗證（番號格式、筆數上限、title 長度），見本次對話的操作說明
+
+---
+
 ### 2026-06-10（feature/community-sync）
 
 **社群同步功能**
