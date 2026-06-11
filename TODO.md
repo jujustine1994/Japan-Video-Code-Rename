@@ -6,6 +6,55 @@
 
 - [ ] **論壇介紹文**：請 AI 撰寫一篇可發布到 PTT/巴哈/Dcard/各論壇的介紹文，說明工具功能（批次重命名電腦內的「寶物」）、如何下載安裝、如何貢獻資料庫。語氣輕鬆符合論壇文化，附上 GitHub 連結。
 
+---
+
+### Task: bulk_enrich_javlibrary.py 完善（owner-only，有空再做）
+
+> 現況：`scripts/bulk_enrich_javlibrary.py` 已可運作（2026-06-11 測試通過）。
+> 以下為讓這個工具更好用的改善項目，優先度不高，有空再處理。
+
+#### 啟動方式
+- [ ] **建立 BAT 啟動器** `bulk_enrich_javlibrary.bat`
+  - 雙擊即可啟動，不需手動開終端機
+  - 視窗跑完後顯示「按任意鍵關閉」不自動消失（`pause`）
+  - 範例：
+    ```bat
+    @echo off
+    cd /d "%~dp0"
+    call venv\Scripts\activate
+    python scripts\bulk_enrich_javlibrary.py %*
+    pause
+    ```
+  - 放在專案根目錄，同 `AV Code Rename 啟動器.bat`
+
+#### 進度顯示
+- [ ] **ETA 預估**：記錄每筆平均耗時，顯示「已完成 X 筆，預估剩餘 Y 分鐘」
+  - 實作方式：記錄 `start_time`，每個 listing 頁後計算 `elapsed / pages_done * pages_remaining`
+  - 顯示格式：`[P45] 💾 Checkpoint：3500 筆 | 本次 +45 | 速度 6.2 秒/筆 | 預估剩餘 3 小時 12 分`
+- [ ] **總頁數預估**：第一次跑時若能偵測 javlibrary 的最後一頁頁碼，可顯示進度百分比
+  - 研究方向：listing 頁底部分頁元件是否有總頁數資訊（HTML selector 待確認）
+
+#### 可靠性
+- [ ] **解析失敗自動重試**：每個 listing 頁結束後，將 `❌ 解析失敗` 的番號收集起來，在 checkpoint 後立即重試一次（換 URL 格式或等 3 秒再試）
+  - 目前約 1–2/6 筆解析失敗，原因可能是部分作品頁面 HTML 結構不同（例如 VR 作品）
+  - 重試仍失敗則記入 `data/enrich_failed.json` 供事後人工確認
+- [ ] **CF re-challenge 偵測**：若 `_wait_ready` timeout（30 秒），目前是 `❌ CF timeout，跳過`。應改為等待更長時間（如 120 秒）後再繼續，避免夜間跑時卡死整個 session
+- [ ] **網路中斷重連**：若 `page.get()` 拋出 exception，捕捉後等 10 秒再重試最多 3 次，避免短暫斷線就終止整個 session
+
+#### 執行完成摘要
+- [ ] **結束時輸出統計摘要**，並寫入 `data/enrich_javlibrary_report.txt`（每次覆蓋）：
+  ```
+  ── 建置摘要 ──────────────────────
+  日期：2026-06-12 03:14
+  爬取範圍：listing 頁 1–500
+  新增筆數：9,832
+  跳過（已有）：1,204
+  解析失敗：87（見 data/enrich_failed.json）
+  lookup 總筆數：11,036
+  耗時：5 小時 22 分
+  ──────────────────────────────────
+  ```
+
 - [x] **社群資料庫安全性審查**（完成 2026-06-10）
   - [x] **Worker 層**：番號格式 `^[A-Z]+-\d+$`、entries 1–1000、title ≤200 字元（workers/index.js）
   - [x] **GitHub Action 層**：body ≤100KB、entries 1–1000、title ≤200，validate_payload / filter_entries 函數化（.github/scripts/process_contribution.py）
@@ -28,14 +77,25 @@
   └─ lookup 沒有           → fallback：爬 javdb 個別番號頁
 ```
 
-### Task: 批次建置基礎資料庫（方案A）
-> ⛔ **暫緩**：javdb 需要有效的登入 session cookie，且全量爬蟲需數小時人工監控。
-> 目前 session 已過期，需重新登入取得新 `_jdb_session` 後才能繼續。
-> 恢復條件：重新登入 javdb → 貼上新 cookie → 從 DatabaseManagerDialog 跑全量建置。
+### Task: 批次建置基礎資料庫（javlibrary 方案）
 
-- [ ] 取得有效 javdb session cookie
-- [ ] 跑全量建置（DatabaseManagerDialog → 全量建置，從第 1 頁開始）
-- [ ] 確認 `data/javdb_lookup.json` 條目格式正確
+> ⚠️ **此功能為工具擁有者（CTH）自用，不面向一般用戶。**
+> 建置完成後將 `data/javdb_lookup.json` 打包進 GitHub Release，用戶透過社群同步下載即可。
+
+> ✅ **可行性驗證完成（2026-06-11）**：
+> - 方案：`nodriver`（pip 安裝）+ javlibrary.com listing 頁
+> - Cloudflare 繞過：headless=False，啟動時解一次 challenge（約 6–10 秒），之後同 session 瀏覽不需重解
+> - listing URL：`https://www.javlibrary.com/ja/vl_newrelease.php?page=N`，每頁 20 筆
+> - 可抓欄位：番號（`#video_id .text`）、片名（`h3.post-title`）、女優名（`span.star a`）、製作商、日期
+> - **不需要 session cookie**，無 javdb 的設計缺陷
+> - 參考：`scripts/test_javlibrary_nodriver.py`
+
+> **待實作**：`enricher.py` 新增 `scrape_javlibrary_listing_pages()`，用 nodriver 替代目前的 Playwright + javdb 方案。
+
+- [x] 確認替代來源（javlibrary 可行性測試）
+- [x] 實作 `scripts/bulk_enrich_javlibrary.py`（2026-06-11，完整版：番號 + 片名 + 女優名，斷點續跑）
+- [x] 測試跑通（2026-06-11，3 頁 × 6 筆 = 17 筆，CF 自動解，checkpoint 正常）
+- [ ] 跑全量建置（從 `vl_newrelease.php?page=1` 開始往後跑到無資料）
 - [ ] 把 lookup.json 打包進 GitHub Release
 
 ### Task: GUI 提示文字
