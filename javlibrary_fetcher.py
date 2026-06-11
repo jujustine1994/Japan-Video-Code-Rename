@@ -15,7 +15,7 @@ _QUERY_DELAY = 2.0
 
 
 class JavlibraryFetcher:
-    def __init__(self, lookup_file: str, cache_file: str):
+    def __init__(self, lookup_file: str, cache_file: str):  # cache_file: interface parity with Fetcher
         self._lookup_path = Path(lookup_file)
         self._lookup: dict = self._load_json(lookup_file)
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -46,8 +46,8 @@ class JavlibraryFetcher:
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
-        self._ready.wait(timeout=30)
-        return self._start_error is None
+        timed_out = not self._ready.wait(timeout=30)
+        return self._start_error is None and not timed_out
 
     def query(self, code: str) -> dict | None:
         if code in self._lookup:
@@ -99,11 +99,10 @@ class JavlibraryFetcher:
     @staticmethod
     async def _wait_ready(page, timeout: int = 30) -> bool:
         for _ in range(timeout // 2):
-            await asyncio.sleep(2)
             title = await page.evaluate("document.title")
             if "請稍候" not in title and "Just a moment" not in title:
-                await asyncio.sleep(2)
                 return True
+            await asyncio.sleep(2)
         return False
 
     async def _query_async(self, code: str) -> dict | None:
