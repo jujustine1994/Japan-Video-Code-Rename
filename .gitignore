@@ -10,4 +10,5 @@ processed_log.json
 .claude/
 config.json
 data/enrich_state.json
+data/enrich_javlibrary_state.json
 data/javdb_session.txt

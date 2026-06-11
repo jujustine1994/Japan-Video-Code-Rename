@@ -50,8 +50,9 @@ class JavlibraryFetcher:
         return self._start_error is None and not timed_out
 
     def query(self, code: str) -> dict | None:
-        if code in self._lookup:
-            return self._lookup[code]
+        entry = self._lookup.get(code)
+        if entry and not entry.get("partial"):
+            return entry  # full entry, skip live query
         if self._start_error is not None or self._loop is None or not self._loop.is_running():
             return None
         future = asyncio.run_coroutine_threadsafe(self._query_async(code), self._loop)
