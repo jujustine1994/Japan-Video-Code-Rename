@@ -364,6 +364,7 @@ class AVRenameApp:
                     result = jl_fetcher.query(code) if jl_ok else None
                     if not result:
                         if not fetcher_started:
+                            self._put("log", "⚠ javlibrary 查無結果，啟動 javdb...\n")
                             fetcher.start()
                             fetcher_started = True
                         result = fetcher.query(code)
