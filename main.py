@@ -16,6 +16,7 @@ import config
 from scanner import scan, extract_code
 from fetcher import Fetcher
 from renamer import build_filename, rename_file, write_processed_log
+from javlibrary_fetcher import JavlibraryFetcher
 
 SCRIPT_DIR = Path(__file__).parent
 LABELS = {"code": "番號", "actress": "女優名", "title": "片名"}
@@ -336,9 +337,18 @@ class AVRenameApp:
                 return
 
             lookup_file = str(SCRIPT_DIR / cfg["lookup_file"])
-            self._put("switch_progress", len(files))
+
+            self._put("log", "🌐 正在啟動背景瀏覽器（首次需 5–10 秒）...\n")
+            jl_fetcher = JavlibraryFetcher(lookup_file, cache_file)
+            jl_ok = jl_fetcher.start()
+            if jl_ok:
+                self._put("log", "✅ 背景瀏覽器就緒\n")
+            else:
+                self._put("log", "⚠ 背景瀏覽器啟動失敗，改用 javdb\n")
+
             fetcher = Fetcher(cache_file, lookup_file)
-            fetcher.start()
+            fetcher_started = False
+            self._put("switch_progress", len(files))
 
             # Phase 1: 查詢所有番號，收集 (Path, base_new_name)
             fetched = []
@@ -350,10 +360,17 @@ class AVRenameApp:
                         self._skipped.append((f.name, "無法辨識番號"))
                         self._put("log", f"⚠ {f.name} → 無法辨識番號\n")
                         continue
-                    result = fetcher.query(code)
+
+                    result = jl_fetcher.query(code) if jl_ok else None
                     if not result:
-                        self._skipped.append((f.name, "javdb 查無資料"))
-                        self._put("log", f"⚠ {f.name} → javdb 查無資料\n")
+                        if not fetcher_started:
+                            fetcher.start()
+                            fetcher_started = True
+                        result = fetcher.query(code)
+
+                    if not result:
+                        self._skipped.append((f.name, "查無資料"))
+                        self._put("log", f"⚠ {f.name} → 查無資料\n")
                         continue
                     base_name = build_filename(
                         code, result["actresses"], result["title"],
@@ -361,7 +378,9 @@ class AVRenameApp:
                     )
                     fetched.append((f, base_name))
             finally:
-                fetcher.stop()
+                jl_fetcher.stop()
+                if fetcher_started:
+                    fetcher.stop()
 
             # Phase 2: 偵測重複，重複者全部補 (1)(2)(3)...
             dup_set    = {name for name, cnt in Counter(n for _, n in fetched).items() if cnt > 1}
