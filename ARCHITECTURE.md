@@ -123,7 +123,7 @@ App (community_sync.py)
 ## 測試
 
 ```
-pytest        → 47 tests（全部通過）
+pytest --ignore=scripts/        → 85 tests（全部通過）
 ```
 
 | 測試檔 | 涵蓋範圍 |
