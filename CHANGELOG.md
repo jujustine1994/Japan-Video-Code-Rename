@@ -2,7 +2,7 @@
 
 ## 目前狀態
 
-**階段：完整實作完成，tkinter GUI 版本 + 社群資料庫 + 安全強化**
+**階段：完整實作完成，tkinter GUI + 社群資料庫 + javlibrary 整合 + 全量建置爬蟲**
 
 ### 已完成
 - [x] 命名規範文件（naming_convention.md）
@@ -21,11 +21,46 @@
 - [x] GitHub Action（.github/workflows/process_contribution.yml + process_contribution.py）
 - [x] 安全強化：Worker + GitHub Action 雙層驗證（番號格式、筆數、title 長度、body 大小）
 - [x] Wrangler 部署設定（workers/wrangler.jsonc）— Worker 程式碼進 repo，`wrangler deploy` 即可更新
-- [x] 全部 80 個單元測試通過
+- [x] javlibrary_fetcher.py — nodriver 背景 Chrome，繞過 Cloudflare，主要查詢來源
+- [x] scripts/bulk_enrich_javlibrary.py — 全量建置爬蟲（番號 + 片名 + 女優名，斷點續跑）
+- [x] 全部 85 個單元測試通過
 
 ---
 
 ## 更新記錄
+
+### 2026-06-11（feature/community-sync）— session 3
+
+**javlibrary 整合為主要查詢來源**
+- 新增 `javlibrary_fetcher.py`（`JavlibraryFetcher` 類別）
+  - nodriver（真實 Chrome）繞過 Cloudflare JS Challenge，headless=False + 視窗推到螢幕外不可見
+  - 背景 daemon thread 跑獨立 asyncio event loop；`start()` 同步等 CF 解除；`query()` 同步呼叫
+  - 整個 session 只開一次 Chrome，1000 筆查詢不需重啟瀏覽器
+  - 每筆查詢結果即時寫回 `javdb_lookup.json`，重啟工具已查過的番號直接命中快取
+  - `_wait_ready()`：先 check title，偵測到 CF 才 sleep 2 秒，消除每筆強制 4 秒延遲
+  - `start()` 正確處理 30 秒 timeout（`_ready.wait` 回傳值納入判斷）
+- 修正 `renamer.strip_actress_suffix()`：改用 while 迴圈處理多女優尾端移除，原本只能移除最後一個
+- 新增 `tests/test_javlibrary_fetcher.py`：4 個單元測試（純 HTML parse，不需 browser）
+- `main.py _worker()` 整合新查詢順序：
+  1. lookup 完整 entry → 直接用（毫秒，不打網路）
+  2. javlibrary live query（主）
+  3. javdb fallback（懶啟動，第一次 javlibrary miss 才啟動）
+  4. 兩者皆失敗 → 記入 skipped
+- GUI log 新增：「🌐 正在啟動背景瀏覽器」/ 「✅ 背景瀏覽器就緒」/ 「⚠ javlibrary 查無結果，啟動 javdb...」
+
+**全量建置爬蟲（owner-only）**
+- 新增 `scripts/bulk_enrich_javlibrary.py`
+  - 爬 javlibrary `vl_newrelease.php` listing 頁，每頁 20 筆
+  - 對每個番號進影片頁抓片名 + 女優名，寫入完整 entry
+  - 不覆蓋已有完整 entry，斷點續跑（進度存 `data/enrich_javlibrary_state.json`）
+  - `--start-page`、`--max-pages` CLI 參數支援
+  - 測試通過：3 頁 × 6 筆，CF 自動解，checkpoint 正常
+- 支援 partial entry（`partial: true`）：`JavlibraryFetcher.query()` 遇到 partial 仍進行 live query 補女優名
+
+**測試**
+- 整體 85 個測試全過（`pytest --ignore=scripts/`）
+
+---
 
 ### 2026-06-10（feature/community-sync）— session 2
 
