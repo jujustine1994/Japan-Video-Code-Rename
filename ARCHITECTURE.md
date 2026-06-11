@@ -18,6 +18,7 @@ AV Code Rename/
 ├── config.py                   config.json 讀寫
 ├── scanner.py                  資料夾掃描、番號辨識、多集偵測
 ├── fetcher.py                  javdb Playwright 爬蟲、快取管理、登入狀態偵測
+├── javlibrary_fetcher.py       javlibrary nodriver 爬蟲、背景瀏覽器管理
 ├── enricher.py                 批次建置（追新 / 全量爬 listing 頁）
 ├── renamer.py                  命名規範套用、實際改名、log 寫入
 ├── community_sync.py           社群資料庫下載 / 貢獻（CommunitySync 類別）
@@ -33,6 +34,7 @@ AV Code Rename/
 │   ├── test_config.py
 │   ├── test_scanner.py
 │   ├── test_renamer.py
+│   ├── test_javlibrary_fetcher.py
 │   ├── test_community_sync.py
 │   └── test_process_contribution.py
 ├── test_fetch.py               fetcher / renamer / enricher 測試（root，歷史遺留）
@@ -121,7 +123,7 @@ App (community_sync.py)
 ## 測試
 
 ```
-pytest        → 80 tests（全部通過）
+pytest        → 47 tests（全部通過）
 ```
 
 | 測試檔 | 涵蓋範圍 |
@@ -129,6 +131,7 @@ pytest        → 80 tests（全部通過）
 | `tests/test_config.py` | config 讀寫 |
 | `tests/test_scanner.py` | 番號辨識、邊界案例 |
 | `tests/test_renamer.py` | build_filename、改名邏輯 |
+| `tests/test_javlibrary_fetcher.py` | `_parse_video()` 解析邏輯（單女優、多女優、無片名、番號去頭） |
 | `tests/test_community_sync.py` | CommunitySync 下載 / 貢獻 |
 | `tests/test_process_contribution.py` | GitHub Action 驗證邏輯 |
 | `test_fetch.py` | fetcher、enricher（root，歷史遺留） |
@@ -136,9 +139,12 @@ pytest        → 80 tests（全部通過）
 
 ## 資料來源
 
+> **注意**：全量建置（`enricher.py` / `DatabaseManagerDialog` → 全量建置）為**工具擁有者自用功能**，非面向一般用戶。
+> 需要有效的登入 session cookie，且需數小時人工監控。建置完成後將 `data/javdb_lookup.json` 打包進 Release 供用戶下載。
+
 | 來源 | 狀況 |
 |------|------|
-| javdb.com | ✅ 可用（需登入 session cookie 取得完整資料） |
+| javdb.com | ✅ 可用（需登入 session；設計缺陷：未登入時所有分頁回傳相同 40 筆） |
+| javlibrary.com | ✅ 可用（nodriver headless=False 繞過 Cloudflare；全量建置用，owner-only） |
 | javbus.com | ❌ 地區封鎖（台灣 IP） |
-| javlibrary.com | ❌ Cloudflare Bot 封鎖 |
 | r18.dev | ❌ 台灣地區封鎖 |
