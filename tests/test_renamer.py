@@ -25,6 +25,12 @@ def test_strip_suffix():
     assert strip_actress_suffix("解禁アナル・FUCK 吉田花", ["吉田花"]) == "解禁アナル・FUCK"
 
 
+def test_strip_multi_actress():
+    # 多女優時應循環移除，不能只移最後一個
+    title = "一ヶ月間の禁欲の果てに 葵つかさ 乙白さやか"
+    assert strip_actress_suffix(title, ["葵つかさ", "乙白さやか"]) == "一ヶ月間の禁欲の果てに"
+
+
 def test_strip_no_match():
     assert strip_actress_suffix("TOHJIRO全集 Vol.15", ["吉田花"]) == "TOHJIRO全集 Vol.15"
 

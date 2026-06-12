@@ -12,9 +12,13 @@ def sanitize(name: str) -> str:
 
 def strip_actress_suffix(title: str, actresses: list) -> str:
     result = title.strip()
-    for name in actresses:
-        if name and result.endswith(name):
-            result = result[: -len(name)].strip()
+    changed = True
+    while changed:
+        changed = False
+        for name in actresses:
+            if name and result.endswith(name):
+                result = result[:-len(name)].strip()
+                changed = True
     return result
 
 
