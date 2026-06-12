@@ -29,6 +29,24 @@
 
 ## 更新記錄
 
+### 2026-06-12（feature/community-sync）— session 5
+
+**專案結構整理（Step 2）**
+- 所有源碼（`main.py`, `config.py`, `scanner.py`, `renamer.py`, `fetcher.py`, `enricher.py`, `javlibrary_fetcher.py`, `community_sync.py`）以 `git mv` 搬進 `src/`，保留 git 歷史
+- `config.json` 一併移至 `src/`（gitignore 不追蹤，路徑同步更新）
+- `src/main.py`：`SCRIPT_DIR` 改為 `Path(__file__).parent.parent`，指向專案根目錄（`cache/`、`data/` 仍在根目錄）
+- `launcher.ps1`：`python main.py` → `python src/main.py`
+- `scripts/bulk_enrich_javlibrary.py`：`sys.path.insert` 改指向 `src/`
+- 新增 `conftest.py`（根目錄）：`sys.path.insert(0, "src")`，讓 pytest 找到已搬移的模組
+- 85 個單元測試全程維持通過
+
+**bulk_enrich_javlibrary.py — 總頁數偵測修正**
+- `_parse_last_page()`：修正 `?&mode=&page=N` URL 的解析（`.lstrip("&")`）；加備用方案：所有分頁連結取最大值
+- 移除 `fallback 9999`（會從不存在的頁碼起爬，立刻空頁結束）
+- 新備用偵測：`_parse_last_page` 失敗時導航 `?page=99999`，javlibrary 自動 cap 到實際末頁，再從分頁讀回真正頁碼；也嘗試讀 `span.current`；全部失敗則印錯誤要求手動指定 `--start-page`
+
+---
+
 ### 2026-06-12（feature/community-sync）— session 4
 
 **Bug 修正**
