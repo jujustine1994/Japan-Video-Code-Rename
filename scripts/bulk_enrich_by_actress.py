@@ -172,7 +172,7 @@ async def phase1(page, state: dict) -> bool:
         prefix_page = 1
 
         url = f"{STAR_LIST_URL}?prefix={prefix}&page={start_page}"
-        print(f"\n[P1] prefix={prefix}  ({pi+1}/{total_p})  已收集 {len(actress_list)} 位女優")
+        print(f"\n── [P1] prefix={prefix} ({pi+1}/{total_p})  已收集 {len(actress_list)} 位女優  [Ctrl+C：安全停止] ──")
 
         if not await _fetch(page, url) or not await _wait_ready(page):
             print(f"  ❌ 跳過 prefix={prefix}")
@@ -246,7 +246,7 @@ async def phase2(page, state: dict, actress_list: list) -> None:
         start_page  = actress_page if i == actress_idx else 1
         actress_page = 1
 
-        print(f"[{i+1}/{total}] {star_name} ({star_id})", end="  ", flush=True)
+        print(f"── [{i+1}/{total}] {star_name}  [Ctrl+C：安全停止] ──")
 
         url = f"{STAR_URL}?s={star_id}&page={start_page}"
         if not await _fetch(page, url) or not await _wait_ready(page):
@@ -281,7 +281,7 @@ async def phase2(page, state: dict, actress_list: list) -> None:
             await asyncio.sleep(PAGE_DELAY)
 
         since_last_save += 1
-        print(f"+{added} 筆  (lookup {len(lookup)})")
+        print(f"   +{added} 筆  (lookup 總計 {len(lookup)})")
 
         # state 與 lookup 必須一起存，避免強制關閉後 state 超前 lookup 造成資料遺漏
         if since_last_save >= SAVE_INTERVAL:
