@@ -20,7 +20,9 @@ import argparse
 import asyncio
 import json
 import os
+import signal
 import sys
+import threading
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -32,6 +34,19 @@ sys.stderr.reconfigure(encoding="utf-8")
 # 把專案根目錄加入 path 以便 import renamer
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from renamer import strip_actress_suffix
+
+# ── 優雅停止（Ctrl+C 跑完本頁後停止）─────────────────────────────────────────
+
+_stop_requested = threading.Event()
+
+def _setup_stop_signal() -> None:
+    def _handler(signum, frame):
+        if _stop_requested.is_set():
+            print("\n⚠ 強制中止", flush=True)
+            os._exit(1)
+        _stop_requested.set()
+        print("\n⏸  收到停止信號，本頁跑完後自動停止（再按一次 Ctrl+C 立即強制中止）", flush=True)
+    signal.signal(signal.SIGINT, _handler)
 
 JAVLIB_BASE = "https://www.javlibrary.com"
 LISTING_URL = f"{JAVLIB_BASE}/ja/vl_newrelease.php"
@@ -151,14 +166,16 @@ async def run(start_page: int, max_pages: int) -> None:
     else:
         resume_msg = f"  📍 從第 {start_page} 頁開始（手動指定）"
 
+    _setup_stop_signal()
+
     print("=" * 54)
     print("  bulk_enrich_javlibrary — 全量建置")
     print(resume_msg)
     print(f"  現有 lookup：{len(lookup)} 筆")
     print()
-    print("  ▶ 中途要停止：按 Ctrl+C（安全，checkpoint 會存好）")
-    print("  ▶ 直接關視窗：也可以，但建議用 Ctrl+C 比較保險")
-    print("  ▶ 續跑：重新雙擊 BAT，自動從上次停止頁碼繼續")
+    print("  ▶ Ctrl+C   ：本頁跑完後停止（checkpoint 安全儲存）")
+    print("  ▶ Ctrl+C×2 ：立即強制中止")
+    print("  ▶ 續跑     ：重新雙擊 BAT，從上次停止頁碼繼續")
     print("=" * 54)
     print()
     print("啟動 Chrome（off-screen）...")
@@ -177,8 +194,11 @@ async def run(start_page: int, max_pages: int) -> None:
         print("✅ CF 已解\n")
 
         for listing_page_num in range(start_page, start_page + max_pages):
+            if _stop_requested.is_set():
+                print(f"✅ 停止於第 {listing_page_num} 頁前，下次從此頁繼續。")
+                break
             listing_url = f"{LISTING_URL}?page={listing_page_num}"
-            print(f"── Listing 頁 {listing_page_num} ──────────────────")
+            print(f"── Listing 頁 {listing_page_num} ── [Ctrl+C：本頁後停止] ──")
 
             # Listing 頁：網路錯誤 → _fetch_page 內部重試；CF timeout → 等 30 秒重試一次
             if not await _fetch_page(page, listing_url):
