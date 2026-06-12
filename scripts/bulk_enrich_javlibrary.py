@@ -205,6 +205,7 @@ async def run(start_page: int, max_pages: int) -> None:
     print("  bulk_enrich_javlibrary — 全量建置")
     print(resume_msg)
     print(f"  現有 lookup：{len(lookup)} 筆")
+    print(f"  來源網址：{LISTING_URL}?page=N")
     print()
     print("  ▶ Ctrl+C   ：本頁跑完後停止（checkpoint 安全儲存）")
     print("  ▶ Ctrl+C×2 ：立即強制中止")
