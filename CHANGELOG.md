@@ -29,6 +29,17 @@
 
 ## 更新記錄
 
+### 2026-06-12（feature/community-sync）— session 4
+
+**Bug 修正**
+- `renamer.strip_actress_suffix()`：改用 while 迴圈反覆移除，修正多女優片名只移除最後一個的問題
+- 新增 `tests/test_renamer.py::test_strip_multi_actress` 測試覆蓋此 case
+
+**Lookup 資料**
+- 手動新增 14 筆 lookup（HSM-087、YMLW-068/069、USBA-089、SNOS-232/234/236/241、ROYD-319/321/324、ROE-509/510、ROE-510）
+
+---
+
 ### 2026-06-11（feature/community-sync）— session 3
 
 **javlibrary 整合為主要查詢來源**
