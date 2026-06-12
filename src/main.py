@@ -18,7 +18,7 @@ from fetcher import Fetcher
 from renamer import build_filename, rename_file, write_processed_log
 from javlibrary_fetcher import JavlibraryFetcher
 
-SCRIPT_DIR = Path(__file__).parent
+SCRIPT_DIR = Path(__file__).parent.parent
 LABELS = {"code": "番號", "actress": "女優名", "title": "片名"}
 KEYS = {"番號": "code", "女優名": "actress", "片名": "title"}
 CHECK_ON  = "☑"

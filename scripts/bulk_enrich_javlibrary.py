@@ -32,7 +32,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 
 # 把專案根目錄加入 path 以便 import renamer
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from renamer import strip_actress_suffix
 
 # ── 優雅停止（Ctrl+C 跑完本頁後停止）─────────────────────────────────────────

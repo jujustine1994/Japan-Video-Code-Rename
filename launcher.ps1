@@ -124,7 +124,7 @@ Write-Host ""
 Write-Host "[START] 啟動中..." -ForegroundColor Green
 Write-Host ""
 
-python main.py
+python src/main.py
 $exitCode = $LASTEXITCODE
 
 if (Test-Path "__pycache__") { Remove-Item -Recurse -Force "__pycache__" }
