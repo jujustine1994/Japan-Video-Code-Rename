@@ -11,4 +11,6 @@ processed_log.json
 config.json
 data/enrich_state.json
 data/enrich_javlibrary_state.json
+data/enrich_actress_state.json
+data/enrich_actress_list.json
 data/javdb_session.txt
