@@ -107,15 +107,35 @@ async def _wait_ready(page, timeout: int = 30) -> bool:
 # ── Parsers ───────────────────────────────────────────────────────────────────
 
 def _parse_last_page(html: str) -> int | None:
-    """從 listing 頁 HTML 取得最後一頁頁碼。selector: .page_selector a.last"""
+    """從 listing 頁 HTML 取得最後一頁頁碼。
+    主要：.page_selector a.last href 裡的 page= 參數。
+    備用：抓所有分頁連結的 page= 值取最大值。
+    """
     from urllib.parse import urlparse, parse_qs
     soup = BeautifulSoup(html, "lxml")
+
+    def _page_from_href(href: str) -> int | None:
+        raw = urlparse(href).query.lstrip("&")
+        qs = parse_qs(raw)
+        pages = qs.get("page", [])
+        try:
+            return int(pages[0]) if pages else None
+        except (ValueError, IndexError):
+            return None
+
     last_a = soup.select_one(".page_selector a.last")
-    if not last_a:
-        return None
-    qs = parse_qs(urlparse(last_a.get("href", "")).query)
-    pages = qs.get("page", [])
-    return int(pages[0]) if pages else None
+    if last_a:
+        n = _page_from_href(last_a.get("href", ""))
+        if n:
+            return n
+
+    # 備用：所有分頁連結取最大值
+    candidates = [
+        _page_from_href(a.get("href", ""))
+        for a in soup.select(".page_selector a[href*='page=']")
+    ]
+    candidates = [n for n in candidates if n]
+    return max(candidates) if candidates else None
 
 
 def _parse_listing(html: str, base_url: str) -> list[dict]:
@@ -213,8 +233,24 @@ async def run(start_page: int, max_pages: int) -> None:
         html_p1 = await page.get_content()
         total_pages = _parse_last_page(html_p1)
         if not total_pages:
-            print("⚠ 無法解析總頁數，預設使用 9999")
-            total_pages = 9999
+            # 備用：導航到超大頁碼，javlibrary 會 cap 到最後一頁，從分頁讀回實際頁碼
+            print("⚠ page 1 無法解析總頁數，嘗試高頁碼偵測...")
+            if await _fetch_page(page, f"{LISTING_URL}?page=99999") and await _wait_ready(page):
+                html_high = await page.get_content()
+                total_pages = _parse_last_page(html_high)
+                # 若 javlibrary 顯示 current page 而非 last link，也嘗試讀 current
+                if not total_pages:
+                    from bs4 import BeautifulSoup as _BS
+                    _soup = _BS(html_high, "lxml")
+                    cur = _soup.select_one(".page_selector span.current")
+                    if cur:
+                        try:
+                            total_pages = int(cur.get_text(strip=True))
+                        except ValueError:
+                            pass
+        if not total_pages:
+            print("❌ 無法偵測總頁數，請以 --start-page 手動指定後重跑")
+            return
         print(f"✅ 總頁數：{total_pages}\n")
 
         # 決定起始頁（從最後一頁往前）
