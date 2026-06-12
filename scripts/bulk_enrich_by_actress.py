@@ -280,18 +280,16 @@ async def phase2(page, state: dict, actress_list: list) -> None:
 
             await asyncio.sleep(PAGE_DELAY)
 
-        session_total  += 1
         since_last_save += 1
         print(f"+{added} 筆  (lookup {len(lookup)})")
 
-        # 每位女優更新 state；每 SAVE_INTERVAL 位存一次 lookup
-        state["actress_idx"]  = i + 1
-        state["actress_page"] = 1
-        state["total_added"]  = state.get("total_added", 0) + added
-        _save(STATE_FILE, state)
-
+        # state 與 lookup 必須一起存，避免強制關閉後 state 超前 lookup 造成資料遺漏
         if since_last_save >= SAVE_INTERVAL:
+            state["actress_idx"]  = i + 1
+            state["actress_page"] = 1
+            state["total_added"]  = state.get("total_added", 0) + session_added
             _save(LOOKUP_FILE, lookup)
+            _save(STATE_FILE, state)
             since_last_save = 0
             print(f"  💾 Checkpoint：{i+1}/{total} 位，lookup {len(lookup)} 筆")
 
