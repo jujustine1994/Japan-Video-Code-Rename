@@ -139,17 +139,33 @@ async def run(start_page: int, max_pages: int) -> None:
         for listing_page_num in range(start_page, start_page + max_pages):
             listing_url = f"{LISTING_URL}?page={listing_page_num}"
             print(f"── Listing 頁 {listing_page_num} ──────────────────")
+
+            # Listing 頁：CF timeout 後等 30 秒重試一次
             await page.get(listing_url)
             if not await _wait_ready(page):
-                print(f"  ❌ CF timeout，停止")
-                break
+                print(f"  ⚠ CF timeout，等 30 秒重試...")
+                await asyncio.sleep(30)
+                await page.get(listing_url)
+                if not await _wait_ready(page):
+                    print(f"  ❌ CF timeout 重試仍失敗，停止")
+                    break
 
             html = await page.get_content()
             items = _parse_listing(html, listing_url)
 
             if not items:
-                print(f"  無資料，結束（共爬 {listing_page_num - start_page} 個 listing 頁）")
-                break
+                # 無資料也重試一次，排除偶發性空頁
+                print(f"  ⚠ 頁面無資料，等 30 秒重試...")
+                await asyncio.sleep(30)
+                await page.get(listing_url)
+                if not await _wait_ready(page):
+                    print(f"  ❌ CF timeout，停止")
+                    break
+                html = await page.get_content()
+                items = _parse_listing(html, listing_url)
+                if not items:
+                    print(f"  無資料，結束（共爬 {listing_page_num - start_page} 個 listing 頁）")
+                    break
 
             print(f"  取得 {len(items)} 筆番號，開始逐一爬影片頁...")
 
@@ -163,20 +179,26 @@ async def run(start_page: int, max_pages: int) -> None:
                     print(f"  [{idx:2d}/{len(items)}] {code:15s} ✓ 已有資料，跳過")
                     continue
 
-                await page.get(video_url)
-                if not await _wait_ready(page):
-                    print(f"  [{idx:2d}/{len(items)}] {code:15s} ❌ CF timeout，跳過")
-                    continue
+                # 影片頁：CF timeout 後等 10 秒重試最多 2 次
+                result = None
+                for attempt in range(3):
+                    if attempt > 0:
+                        print(f"  [{idx:2d}/{len(items)}] {code:15s} ⚠ CF timeout，等 10 秒重試（第 {attempt} 次）...")
+                        await asyncio.sleep(10)
+                    await page.get(video_url)
+                    if not await _wait_ready(page):
+                        continue
+                    html2 = await page.get_content()
+                    result = _parse_video(html2, code)
+                    break  # 成功取得頁面（不管 parse 結果），離開重試迴圈
 
-                html2 = await page.get_content()
-                result = _parse_video(html2, code)
                 if result:
                     lookup[code] = {"title": result["title"], "actresses": result["actresses"]}
                     session_added += 1
                     actress_str = "、".join(result["actresses"]) if result["actresses"] else "（無女優名）"
                     print(f"  [{idx:2d}/{len(items)}] {code:15s} ✅ {result['title'][:30]}  [{actress_str}]")
                 else:
-                    print(f"  [{idx:2d}/{len(items)}] {code:15s} ❌ 解析失敗")
+                    print(f"  [{idx:2d}/{len(items)}] {code:15s} ❌ 解析失敗/CF timeout，跳過")
 
                 await asyncio.sleep(PAGE_DELAY)
 
