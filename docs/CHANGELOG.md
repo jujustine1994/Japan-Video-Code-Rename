@@ -36,7 +36,23 @@
 - 新增 `tests/test_renamer.py::test_strip_multi_actress` 測試覆蓋此 case
 
 **Lookup 資料**
-- 手動新增 14 筆 lookup（HSM-087、YMLW-068/069、USBA-089、SNOS-232/234/236/241、ROYD-319/321/324、ROE-509/510、ROE-510）
+- 手動新增 14 筆 lookup（HSM-087、YMLW-068/069、USBA-089、SNOS-232/234/236/241、ROYD-319/321/324、ROE-509/510）
+
+**bulk_enrich_javlibrary.py 功能完善**
+- 新增雙擊啟動器 `bulk_enrich_javlibrary.bat`
+- CF timeout 自動重試：listing 頁等 30 秒重試一次；影片頁等 10 秒重試最多 2 次
+- 解析失敗（result=None）也重試，不只 CF timeout 才重試
+- 網路錯誤自動重試（`_fetch_page`，15 秒 × 3 次）
+- 原子寫入：`_save()` 改寫暫存檔再 `os.replace()`，防止強制關閉造成 JSON 損壞
+- 啟動時顯示操作說明（Ctrl+C 本頁後停止、Ctrl+C×2 強制中止、續跑方式）
+- 啟動時顯示 checkpoint 資訊（全新 / 從第 X 頁繼續）
+- **Ctrl+C 優雅停止**：signal handler 攔截，本頁跑完才停；每頁 header 常駐顯示 `[Ctrl+C：本頁後停止]`
+- **反向爬取**（最後一頁 → 第 1 頁）：啟動後動態偵測總頁數（`a.last` selector），新作品只影響前幾頁，高頁碼穩定，checkpoint 可靠
+
+**專案結構整理（Step 1）**
+- `ARCHITECTURE.md`, `CHANGELOG.md`, `PITFALLS.md`, `TODO.md`, `naming_convention.md` 移至 `docs/`
+- `test_fetch.py`, `test_enricher.py` 移至 `tests/`（85 tests 仍全過）
+- Step 2（源碼搬進 `src/`）詳細計畫記錄於 `docs/TODO.md`
 
 ---
 
