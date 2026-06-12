@@ -106,6 +106,18 @@ async def _wait_ready(page, timeout: int = 30) -> bool:
 
 # ── Parsers ───────────────────────────────────────────────────────────────────
 
+def _parse_last_page(html: str) -> int | None:
+    """從 listing 頁 HTML 取得最後一頁頁碼。selector: .page_selector a.last"""
+    from urllib.parse import urlparse, parse_qs
+    soup = BeautifulSoup(html, "lxml")
+    last_a = soup.select_one(".page_selector a.last")
+    if not last_a:
+        return None
+    qs = parse_qs(urlparse(last_a.get("href", "")).query)
+    pages = qs.get("page", [])
+    return int(pages[0]) if pages else None
+
+
 def _parse_listing(html: str, base_url: str) -> list[dict]:
     """從 listing 頁取得番號清單與對應影片頁 URL。"""
     soup = BeautifulSoup(html, "lxml")
@@ -159,10 +171,10 @@ async def run(start_page: int, max_pages: int) -> None:
     session_skipped = 0
 
     checkpoint_page = state.get("last_page")
-    if checkpoint_page and checkpoint_page > 1 and start_page == checkpoint_page:
-        resume_msg = f"  📍 從 checkpoint 繼續：第 {start_page} 頁（上次累計 {state.get('total_added', '?')} 筆）"
-    elif start_page == 1:
-        resume_msg = f"  📍 從第 1 頁開始（全新建置）"
+    if start_page is None:
+        resume_msg = f"  📍 全新建置：啟動後自動偵測最後一頁，從末頁往前爬"
+    elif checkpoint_page and start_page == checkpoint_page and state.get("direction") == "desc":
+        resume_msg = f"  📍 從 checkpoint 繼續：第 {start_page} 頁往前（上次累計 {state.get('total_added', '?')} 筆）"
     else:
         resume_msg = f"  📍 從第 {start_page} 頁開始（手動指定）"
 
@@ -191,14 +203,33 @@ async def run(start_page: int, max_pages: int) -> None:
         if not await _wait_ready(page):
             print("❌ CF 未解，退出")
             return
-        print("✅ CF 已解\n")
+        print("✅ CF 已解")
 
-        for listing_page_num in range(start_page, start_page + max_pages):
+        # 偵測總頁數（從 page 1 的分頁 HTML）
+        print("偵測總頁數...")
+        if not await _fetch_page(page, f"{LISTING_URL}?page=1") or not await _wait_ready(page):
+            print("❌ 無法取得第 1 頁，退出")
+            return
+        html_p1 = await page.get_content()
+        total_pages = _parse_last_page(html_p1)
+        if not total_pages:
+            print("⚠ 無法解析總頁數，預設使用 9999")
+            total_pages = 9999
+        print(f"✅ 總頁數：{total_pages}\n")
+
+        # 決定起始頁（從最後一頁往前）
+        actual_start = start_page if start_page is not None else total_pages
+        end_page = max(1, actual_start - max_pages + 1)
+
+        print(f"  爬取範圍：第 {actual_start} 頁 → 第 {end_page} 頁（往前）")
+        print()
+
+        for listing_page_num in range(actual_start, end_page - 1, -1):
             if _stop_requested.is_set():
                 print(f"✅ 停止於第 {listing_page_num} 頁前，下次從此頁繼續。")
                 break
             listing_url = f"{LISTING_URL}?page={listing_page_num}"
-            print(f"── Listing 頁 {listing_page_num} ── [Ctrl+C：本頁後停止] ──")
+            print(f"── Listing 頁 {listing_page_num}/{total_pages} ── [Ctrl+C：本頁後停止] ──")
 
             # Listing 頁：網路錯誤 → _fetch_page 內部重試；CF timeout → 等 30 秒重試一次
             if not await _fetch_page(page, listing_url):
@@ -268,8 +299,9 @@ async def run(start_page: int, max_pages: int) -> None:
 
                 await asyncio.sleep(PAGE_DELAY)
 
-            # 每個 listing 頁結束後存 checkpoint
-            state["last_page"] = listing_page_num + 1
+            # 每個 listing 頁結束後存 checkpoint（往前爬，下次從 listing_page_num-1 繼續）
+            state["last_page"] = listing_page_num - 1
+            state["direction"] = "desc"
             state["total_added"] = original_count + session_added
             _save(LOOKUP_FILE, lookup)
             _save(STATE_FILE, state)
@@ -292,7 +324,12 @@ def main() -> None:
     args = parser.parse_args()
 
     state = _load(STATE_FILE)
-    start = args.start_page if args.start_page is not None else state.get("last_page", 1)
+    if args.start_page is not None:
+        start = args.start_page          # 手動指定
+    elif state.get("direction") == "desc" and state.get("last_page", 0) > 0:
+        start = state["last_page"]       # 從上次 checkpoint 繼續往前
+    else:
+        start = None                     # 自動偵測最後一頁（全新建置）
 
     asyncio.run(run(start, args.max_pages))
 
