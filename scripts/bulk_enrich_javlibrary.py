@@ -95,10 +95,11 @@ async def _fetch_page(page, url: str, retries: int = 3, delay: int = 15) -> bool
 
 
 async def _wait_ready(page, timeout: int = 30) -> bool:
-    """等 Cloudflare challenge 解除。title 不含 CF 標記就回傳 True。"""
+    """等 Cloudflare challenge 解除，並等 JS 渲染完成後回傳 True。"""
     for _ in range(timeout // 2):
         title = await page.evaluate("document.title")
         if "請稍候" not in title and "Just a moment" not in title:
+            await asyncio.sleep(2)  # 等頁面 DOM 渲染完成
             return True
         await asyncio.sleep(2)
     return False
