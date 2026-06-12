@@ -29,14 +29,15 @@
 
 ## 命名規範
 
-詳見 `naming_convention.md`。
+詳見 `docs/naming_convention.md`。
 
 標準格式：`[番號] [女優名(別名)] - [日文片名] [女優名].[副檔名]`
 
 ## 資料來源
 
-- **主要**：javdb.com（Playwright 無頭瀏覽器）
-- javbus / javlibrary：已測試，因 bot 偵測機制無法使用（詳見 PITFALLS.md）
+- **主要**：javlibrary.com（nodriver 真實 Chrome，繞過 Cloudflare）
+- **Fallback**：javdb.com（Playwright，需登入 session）
+- javbus：地區封鎖（台灣 IP），無法使用（詳見 `docs/PITFALLS.md`）
 
 ## 首次設定
 

@@ -13,11 +13,13 @@
 
 ---
 
-### P2：javlibrary Cloudflare 封鎖
+### P2：javlibrary Cloudflare 封鎖（已解決，2026-06）
 
 **問題**：javlibrary.com 被 Cloudflare 完全封鎖，返回 HTTP 403。
 **原因**：Cloudflare 的 Bot Management，headless Playwright 無法通過。
-**解法**：放棄 javlibrary，改用 javdb。
+**解法**：改用 `nodriver`（真實 Chrome，`headless=False`，視窗推到螢幕外 `-32000,0`）。CF challenge 啟動時解一次（約 6–10 秒），同 session 後續請求不需重解。
+**現狀**：`javlibrary_fetcher.py` 已整合為主要查詢來源；`bulk_enrich_javlibrary.py` 用於全量建置。
+**禁止**：不要改回 headless Playwright，CF 偵測 headless 屬性，headless=False 才能過。
 
 ---
 

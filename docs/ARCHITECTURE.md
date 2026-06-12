@@ -12,7 +12,8 @@
 
 ```
 AV Code Rename/
-├── AV Code Rename 啟動器.bat   雙擊入口
+├── AV Code Rename 啟動器.bat   雙擊入口（主程式）
+├── bulk_enrich_javlibrary.bat  雙擊入口（全量建置，owner-only）
 ├── launcher.ps1                環境檢查、venv 建立、套件安裝、啟動主程式
 ├── main.py                     tkinter GUI 主程式
 ├── config.py                   config.json 讀寫
@@ -36,9 +37,9 @@ AV Code Rename/
 │   ├── test_renamer.py
 │   ├── test_javlibrary_fetcher.py
 │   ├── test_community_sync.py
-│   └── test_process_contribution.py
-├── test_fetch.py               fetcher / renamer / enricher 測試（root，歷史遺留）
-├── test_enricher.py            enricher 測試（root，歷史遺留）
+│   ├── test_process_contribution.py
+│   ├── test_fetch.py               fetcher / renamer / scanner 測試（歷史遺留，已搬）
+│   └── test_enricher.py            enricher 測試（歷史遺留，已搬）
 │
 ├── workers/
 │   ├── index.js                Cloudflare Worker 程式碼（安全驗證 + GitHub Issue 建立）
@@ -61,12 +62,18 @@ AV Code Rename/
 AV Code Rename 啟動器.bat
     └── launcher.ps1 (環境檢查、venv、套件)
             └── main.py (AVRenameApp tkinter)
-                    ├── scanner.py      掃描資料夾、辨識番號
-                    ├── fetcher.py      javdb Playwright 爬蟲
-                    │       快取順序：javdb_lookup → cache → javdb 爬蟲
-                    ├── enricher.py     批次建置（追新 / 全量）
-                    ├── renamer.py      命名規範套用、改名
-                    └── community_sync.py  社群 DB 下載 / 貢獻
+                    ├── scanner.py              掃描資料夾、辨識番號
+                    ├── javlibrary_fetcher.py   主要查詢（nodriver Chrome）
+                    ├── fetcher.py              javdb fallback（Playwright）
+                    │       查詢順序：javdb_lookup → javlibrary live → javdb fallback
+                    ├── enricher.py             批次建置（追新 / 全量，javdb）
+                    ├── renamer.py              命名規範套用、改名
+                    └── community_sync.py       社群 DB 下載 / 貢獻
+
+bulk_enrich_javlibrary.bat（owner-only）
+    └── scripts/bulk_enrich_javlibrary.py
+            javlibrary vl_newrelease.php 反向爬取（最後頁→第 1 頁）
+            斷點續跑、CF 自動重試、原子寫入、Ctrl+C 優雅停止
 ```
 
 ## 社群資料庫架構
@@ -96,7 +103,7 @@ App (community_sync.py)
 | 社群資料庫 | `data/javdb_community.json` | 番號→片名（無女優名），可下載更新 |
 | 操作快取 | `cache/javdb_cache.json` | 含 no_data，7 天 TTL，gitignore |
 
-查詢順序：lookup → cache → javdb 爬蟲；成功後同步寫入 lookup + cache。
+查詢順序：lookup → javlibrary live → javdb fallback；成功後寫入 lookup。
 
 ## GUI 主要元件
 
@@ -134,8 +141,8 @@ pytest --ignore=scripts/        → 85 tests（全部通過）
 | `tests/test_javlibrary_fetcher.py` | `_parse_video()` 解析邏輯（單女優、多女優、無片名、番號去頭） |
 | `tests/test_community_sync.py` | CommunitySync 下載 / 貢獻 |
 | `tests/test_process_contribution.py` | GitHub Action 驗證邏輯 |
-| `test_fetch.py` | fetcher、enricher（root，歷史遺留） |
-| `test_enricher.py` | enricher 進階（root，歷史遺留） |
+| `tests/test_fetch.py` | fetcher、scanner、renamer（歷史遺留） |
+| `tests/test_enricher.py` | enricher 進階（歷史遺留） |
 
 ## 資料來源
 
@@ -144,7 +151,7 @@ pytest --ignore=scripts/        → 85 tests（全部通過）
 
 | 來源 | 狀況 |
 |------|------|
-| javdb.com | ✅ 可用（需登入 session；設計缺陷：未登入時所有分頁回傳相同 40 筆） |
-| javlibrary.com | ✅ 可用（nodriver headless=False 繞過 Cloudflare；全量建置用，owner-only） |
+| javlibrary.com | ✅ 主要來源（nodriver headless=False 繞過 Cloudflare；全量建置 + live 查詢） |
+| javdb.com | ✅ Fallback（需登入 session；設計缺陷：未登入時所有分頁回傳相同 40 筆） |
 | javbus.com | ❌ 地區封鎖（台灣 IP） |
 | r18.dev | ❌ 台灣地區封鎖 |
