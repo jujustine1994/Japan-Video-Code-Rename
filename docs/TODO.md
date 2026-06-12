@@ -8,6 +8,61 @@
 
 ---
 
+### Task: 專案結構整理 Step 2 — 源碼搬進 src/
+
+> **前置狀態**：Step 1（2026-06-12）已完成，MD 文件移至 `docs/`，舊測試移至 `tests/`。
+> 源碼 `.py` 仍在根目錄，此 Task 為下一步整理。
+
+#### 目標結構
+
+```
+root/
+  AV Code Rename 啟動器.bat
+  bulk_enrich_javlibrary.bat
+  launcher.ps1
+  README.md
+  .gitignore
+  requirements.txt
+  src/                   ← 所有 .py 源碼 + config.json
+  docs/                  ← 所有 MD 文件（已完成）
+  tests/                 ← 所有測試（已完成）
+  data/
+  cache/
+  scripts/
+  workers/
+```
+
+#### 需搬移的檔案（8 個 .py + 1 個 .json）
+
+| 檔案 | 搬到 |
+|------|------|
+| `main.py` | `src/main.py` |
+| `config.py` | `src/config.py` |
+| `config.json` | `src/config.json` |
+| `scanner.py` | `src/scanner.py` |
+| `renamer.py` | `src/renamer.py` |
+| `fetcher.py` | `src/fetcher.py` |
+| `enricher.py` | `src/enricher.py` |
+| `javlibrary_fetcher.py` | `src/javlibrary_fetcher.py` |
+| `community_sync.py` | `src/community_sync.py` |
+
+#### 同步需更新的地方
+
+1. **`launcher.ps1`**：`python main.py` → `python src/main.py`
+2. **`scripts/bulk_enrich_javlibrary.py`**：`sys.path.insert(0, ...)` 已指向 parent，搬後仍需確認 `from renamer import` 路徑正確
+3. **`tests/`**：目前 pytest 自動把根目錄加入 sys.path，搬到 `src/` 後需在 `conftest.py` 補 `sys.path.insert(0, "src")` 或改用 `pyproject.toml` 的 `pythonpath` 設定
+4. **`config.py` 內的相對路徑**：`SCRIPT_DIR = Path(__file__).parent` 用法需確認搬後仍指向正確根目錄（`cache/`、`data/` 在根目錄，不在 `src/`）
+5. **`main.py` 的 `SCRIPT_DIR`**：同上，搬進 `src/` 後 `Path(__file__).parent` 會指向 `src/`，需改為 `Path(__file__).parent.parent`
+
+#### 注意事項
+
+- 使用 `git mv` 保留 git 歷史
+- 搬移完立刻跑 `pytest --ignore=scripts/` 確認 85 passed
+- 搬移完立刻雙擊啟動器確認 GUI 正常啟動
+- **不可一次性全部移動**，建議逐檔搬移並測試
+
+---
+
 ### Task: bulk_enrich_javlibrary.py 完善（owner-only，有空再做）
 
 > 現況：`scripts/bulk_enrich_javlibrary.py` 已可運作（2026-06-11 測試通過）。
