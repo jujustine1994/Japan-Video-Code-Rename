@@ -143,9 +143,17 @@ async def run(start_page: int, max_pages: int) -> None:
     session_added = 0
     session_skipped = 0
 
+    checkpoint_page = state.get("last_page")
+    if checkpoint_page and checkpoint_page > 1 and start_page == checkpoint_page:
+        resume_msg = f"  📍 從 checkpoint 繼續：第 {start_page} 頁（上次累計 {state.get('total_added', '?')} 筆）"
+    elif start_page == 1:
+        resume_msg = f"  📍 從第 1 頁開始（全新建置）"
+    else:
+        resume_msg = f"  📍 從第 {start_page} 頁開始（手動指定）"
+
     print("=" * 54)
     print("  bulk_enrich_javlibrary — 全量建置")
-    print(f"  起始頁：{start_page}，最多 {max_pages} 個 listing 頁")
+    print(resume_msg)
     print(f"  現有 lookup：{len(lookup)} 筆")
     print()
     print("  ▶ 中途要停止：按 Ctrl+C（安全，checkpoint 會存好）")
@@ -211,19 +219,24 @@ async def run(start_page: int, max_pages: int) -> None:
                     print(f"  [{idx:2d}/{len(items)}] {code:15s} ✓ 已有資料，跳過")
                     continue
 
-                # 影片頁：網路錯誤 → _fetch_page 內部重試；CF timeout → 等 10 秒重試最多 2 次
+                # 影片頁：CF timeout 或解析失敗都重試，最多 3 次
                 result = None
                 for attempt in range(3):
                     if attempt > 0:
-                        print(f"  [{idx:2d}/{len(items)}] {code:15s} ⚠ CF timeout，等 10 秒重試（第 {attempt} 次）...")
                         await asyncio.sleep(10)
                     if not await _fetch_page(page, video_url):
-                        break  # 網路持續失敗，跳過這筆
+                        print(f"  [{idx:2d}/{len(items)}] {code:15s} ❌ 網路失敗，跳過")
+                        break
                     if not await _wait_ready(page):
-                        continue  # CF 未解，進下一次重試
+                        print(f"  [{idx:2d}/{len(items)}] {code:15s} ⚠ CF timeout（第 {attempt + 1}/3），重試...")
+                        continue
                     html2 = await page.get_content()
                     result = _parse_video(html2, code)
-                    break  # 成功取得頁面，離開重試迴圈
+                    if result:
+                        break
+                    # 解析失敗（頁面可能沒載完或結構不同）
+                    if attempt < 2:
+                        print(f"  [{idx:2d}/{len(items)}] {code:15s} ⚠ 解析失敗（第 {attempt + 1}/3），重試...")
 
                 if result:
                     lookup[code] = {"title": result["title"], "actresses": result["actresses"]}
@@ -231,7 +244,7 @@ async def run(start_page: int, max_pages: int) -> None:
                     actress_str = "、".join(result["actresses"]) if result["actresses"] else "（無女優名）"
                     print(f"  [{idx:2d}/{len(items)}] {code:15s} ✅ {result['title'][:30]}  [{actress_str}]")
                 else:
-                    print(f"  [{idx:2d}/{len(items)}] {code:15s} ❌ 解析失敗/逾時，跳過")
+                    print(f"  [{idx:2d}/{len(items)}] {code:15s} ❌ 跳過（3 次皆失敗）")
 
                 await asyncio.sleep(PAGE_DELAY)
 
