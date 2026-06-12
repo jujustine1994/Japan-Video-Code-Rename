@@ -19,6 +19,7 @@
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from urllib.parse import urljoin
@@ -52,12 +53,31 @@ def _load(path: Path) -> dict:
 
 
 def _save(path: Path, data: dict) -> None:
+    """原子寫入：先寫暫存檔再 replace，防止中途強制關閉造成 JSON 損壞。"""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
 
 
 # ── Browser helpers ───────────────────────────────────────────────────────────
+
+async def _fetch_page(page, url: str, retries: int = 3, delay: int = 15) -> bool:
+    """載入 URL，網路錯誤自動重試。回傳 True 代表頁面有載入（不保證 CF 已解）。"""
+    for attempt in range(retries):
+        try:
+            await page.get(url)
+            return True
+        except Exception as e:
+            if attempt < retries - 1:
+                print(f"  ⚠ 網路錯誤（{e}），等 {delay} 秒重試（第 {attempt + 1} 次）...")
+                await asyncio.sleep(delay)
+            else:
+                print(f"  ❌ 網路錯誤，重試 {retries} 次仍失敗")
+                return False
+    return False
+
 
 async def _wait_ready(page, timeout: int = 30) -> bool:
     """等 Cloudflare challenge 解除。title 不含 CF 標記就回傳 True。"""
@@ -123,13 +143,25 @@ async def run(start_page: int, max_pages: int) -> None:
     session_added = 0
     session_skipped = 0
 
-    print(f"起始頁：{start_page}，最多 {max_pages} 個 listing 頁")
-    print(f"現有 lookup：{len(lookup)} 筆")
+    print("=" * 54)
+    print("  bulk_enrich_javlibrary — 全量建置")
+    print(f"  起始頁：{start_page}，最多 {max_pages} 個 listing 頁")
+    print(f"  現有 lookup：{len(lookup)} 筆")
+    print()
+    print("  ▶ 中途要停止：按 Ctrl+C（安全，checkpoint 會存好）")
+    print("  ▶ 直接關視窗：也可以，但建議用 Ctrl+C 比較保險")
+    print("  ▶ 續跑：重新雙擊 BAT，自動從上次停止頁碼繼續")
+    print("=" * 54)
+    print()
     print("啟動 Chrome（off-screen）...")
 
     browser = await uc.start(headless=False, browser_args=BROWSER_ARGS)
     try:
-        page = await browser.get(f"{JAVLIB_BASE}/ja/")
+        try:
+            page = await browser.get(f"{JAVLIB_BASE}/ja/")
+        except Exception as e:
+            print(f"❌ 無法連線（{e}），退出")
+            return
         print("等待 Cloudflare challenge...")
         if not await _wait_ready(page):
             print("❌ CF 未解，退出")
@@ -140,13 +172,14 @@ async def run(start_page: int, max_pages: int) -> None:
             listing_url = f"{LISTING_URL}?page={listing_page_num}"
             print(f"── Listing 頁 {listing_page_num} ──────────────────")
 
-            # Listing 頁：CF timeout 後等 30 秒重試一次
-            await page.get(listing_url)
+            # Listing 頁：網路錯誤 → _fetch_page 內部重試；CF timeout → 等 30 秒重試一次
+            if not await _fetch_page(page, listing_url):
+                print(f"  ❌ 網路持續失敗，停止")
+                break
             if not await _wait_ready(page):
                 print(f"  ⚠ CF timeout，等 30 秒重試...")
                 await asyncio.sleep(30)
-                await page.get(listing_url)
-                if not await _wait_ready(page):
+                if not await _fetch_page(page, listing_url) or not await _wait_ready(page):
                     print(f"  ❌ CF timeout 重試仍失敗，停止")
                     break
 
@@ -157,8 +190,7 @@ async def run(start_page: int, max_pages: int) -> None:
                 # 無資料也重試一次，排除偶發性空頁
                 print(f"  ⚠ 頁面無資料，等 30 秒重試...")
                 await asyncio.sleep(30)
-                await page.get(listing_url)
-                if not await _wait_ready(page):
+                if not await _fetch_page(page, listing_url) or not await _wait_ready(page):
                     print(f"  ❌ CF timeout，停止")
                     break
                 html = await page.get_content()
@@ -179,18 +211,19 @@ async def run(start_page: int, max_pages: int) -> None:
                     print(f"  [{idx:2d}/{len(items)}] {code:15s} ✓ 已有資料，跳過")
                     continue
 
-                # 影片頁：CF timeout 後等 10 秒重試最多 2 次
+                # 影片頁：網路錯誤 → _fetch_page 內部重試；CF timeout → 等 10 秒重試最多 2 次
                 result = None
                 for attempt in range(3):
                     if attempt > 0:
                         print(f"  [{idx:2d}/{len(items)}] {code:15s} ⚠ CF timeout，等 10 秒重試（第 {attempt} 次）...")
                         await asyncio.sleep(10)
-                    await page.get(video_url)
+                    if not await _fetch_page(page, video_url):
+                        break  # 網路持續失敗，跳過這筆
                     if not await _wait_ready(page):
-                        continue
+                        continue  # CF 未解，進下一次重試
                     html2 = await page.get_content()
                     result = _parse_video(html2, code)
-                    break  # 成功取得頁面（不管 parse 結果），離開重試迴圈
+                    break  # 成功取得頁面，離開重試迴圈
 
                 if result:
                     lookup[code] = {"title": result["title"], "actresses": result["actresses"]}
@@ -198,7 +231,7 @@ async def run(start_page: int, max_pages: int) -> None:
                     actress_str = "、".join(result["actresses"]) if result["actresses"] else "（無女優名）"
                     print(f"  [{idx:2d}/{len(items)}] {code:15s} ✅ {result['title'][:30]}  [{actress_str}]")
                 else:
-                    print(f"  [{idx:2d}/{len(items)}] {code:15s} ❌ 解析失敗/CF timeout，跳過")
+                    print(f"  [{idx:2d}/{len(items)}] {code:15s} ❌ 解析失敗/逾時，跳過")
 
                 await asyncio.sleep(PAGE_DELAY)
 
