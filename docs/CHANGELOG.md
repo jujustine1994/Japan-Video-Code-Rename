@@ -67,6 +67,12 @@
 - **Ctrl+C 優雅停止**：signal handler 攔截，本頁跑完才停；每頁 header 常駐顯示 `[Ctrl+C：本頁後停止]`
 - **反向爬取**（最後一頁 → 第 1 頁）：啟動後動態偵測總頁數（`a.last` selector），新作品只影響前幾頁，高頁碼穩定，checkpoint 可靠
 
+**文件更新**
+- `docs/PITFALLS.md` P2：javlibrary 改為「已用 nodriver 解決」，補禁止事項
+- `README.md`：資料來源更正（javlibrary 主 / javdb fallback）；文件路徑加 `docs/` 前綴
+- `docs/ARCHITECTURE.md`：目錄結構補 BAT、測試路徑更正；查詢流程圖更新；資料來源表格順序互換
+- `scripts/README.md`：`bulk_enrich_javlibrary.py` 說明更正（完整資料 + 反向爬取）
+
 **專案結構整理（Step 1）**
 - `ARCHITECTURE.md`, `CHANGELOG.md`, `PITFALLS.md`, `TODO.md`, `naming_convention.md` 移至 `docs/`
 - `test_fetch.py`, `test_enricher.py` 移至 `tests/`（85 tests 仍全過）
